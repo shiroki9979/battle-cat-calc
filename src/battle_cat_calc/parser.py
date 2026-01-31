@@ -6,14 +6,16 @@ from .models import GachaSlot, Position, ParseStatus, Track
 class BCParser:
     """Parses HTML content from BC Godfat into structured data."""
     
-    def __init__(self):
+    def __init__(self, html_content: str):
+        self.html_content = html_content
         self.regex_a = r'^N([0-9]+)(A)$'
         self.regex_b = r'^N([0-9]+)(B)$'
         self.regex_next_pos = r'(?:->|<-)\s*(\d+)([AB])'
+        self.track_a, self.track_b = self._parse_gacha_table()
 
-    def parse_gacha_table(self, html_content: str) -> tuple[Track, Track] :
+    def _parse_gacha_table(self) -> tuple[Track, Track] :
         """Parses the gacha table and returns a tuple of Track A and Track B."""
-        soup = BeautifulSoup(html_content, "html.parser")
+        soup = BeautifulSoup(self.html_content, "html.parser")
         table = soup.find("table")
         if not table:
             return (Track("A"), Track("B"))
@@ -22,6 +24,13 @@ class BCParser:
         
         track_a = self._parse_track_a(rows)
         track_b = self._parse_track_b(rows)
+
+        # Validate tracks
+        if not self._validate_track(track_a) or not self._validate_track(track_b):
+            # If validation fails, we can return empty tracks or 
+            # perhaps the partially parsed tracks depending on requirements.
+            # For now, let's keep it simple as per the plan.
+            raise ValueError("Invalid track")
         
         return (track_a, track_b)
 
@@ -193,3 +202,29 @@ class BCParser:
         if len(found_names) > 1:
             return ParseStatus.MULTIPLE_DATA
         return found_names[0] if found_names else ""
+
+    def _validate_track(self, track: Track) -> bool:
+        """驗證軌道是否包含連續的 ID。"""
+        if not track:
+            return False
+        
+        expected_id = track[0].id[0]
+        for slot in track:
+            if slot.id[0] != expected_id:
+                return False
+            expected_id += 1
+        return True
+
+    def get_all_cats(self) -> set[str]:
+        """獲取所有軌道中出現過的貓咪種類集合。"""
+        cats = set()
+        for track in [self.track_a, self.track_b]:
+            for slot in track:
+                if isinstance(slot.result, str) and slot.result:
+                    cats.add(slot.result)
+                if isinstance(slot.guaranteed, str) and slot.guaranteed:
+                    cats.add(slot.guaranteed)
+        return cats
+
+    def get_tracks(self) -> tuple[Track, Track]:
+        return self.track_a, self.track_b
