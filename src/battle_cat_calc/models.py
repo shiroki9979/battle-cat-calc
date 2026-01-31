@@ -4,7 +4,7 @@ from enum import Enum
 from collections import UserList
 
 class ParseStatus(Enum):
-    """Represents special states during parsing."""
+    """代表解析過程中的特殊狀態。"""
     MULTIPLE_DATA = "Multiple Data Found"
     INVALID_DATA = "Invalid Data"
     AMBIGUOUS = "Ambiguous Position"
@@ -14,23 +14,22 @@ class ParseStatus(Enum):
 
 @dataclass
 class Position:
-    """Represents a gacha track position."""
+    """代表一個轉蛋軌道的位置。"""
     id: int
     track: str
 
 @dataclass
 class GachaSlot:
-    """Represents a single slot in the gacha roll (A or B track)."""
+    """代表轉蛋列表中的單一個格子 (A 或 B 軌)。"""
     id: Tuple[int, str]  # (number, track)
     result: Union[str, ParseStatus]
     guaranteed: Union[str, ParseStatus]
     next_pos: Optional[Union[Position, ParseStatus]] = None
 
 class Track(UserList):
-    """A professional container for a sequence of GachaSlots.
+    """包含一系列 GachaSlots 的專業容器。
     
-    Inherits from UserList to provide full list functionality while allowing
-    custom metadata and helper methods.
+    繼承自 UserList 以提供完整的列表功能，同時允許自定義元數據和輔助方法。
     """
     def __init__(self, name: str, slots: List[GachaSlot] = None):
         super().__init__(slots or [])
@@ -40,7 +39,7 @@ class Track(UserList):
         return f"Track(name='{self.name}', slots={len(self.data)})"
 
     def get_slot(self, index: int) -> Optional[GachaSlot]:
-        """Returns the slot at the given 1-based index (ID)."""
+        """傳回指定索引 (1-based ID) 的格子。"""
         for slot in self.data:
             if slot.id[0] == index:
                 return slot

@@ -4,7 +4,7 @@ from typing import List, Optional, Union
 from .models import GachaSlot, Position, ParseStatus, Track
 
 class BCParser:
-    """Parses HTML content from BC Godfat into structured data."""
+    """將 BC Godfat 的 HTML 內容解析為結構化資料。"""
     
     def __init__(self, html_content: str):
         self.html_content = html_content
@@ -14,11 +14,11 @@ class BCParser:
         self.track_a, self.track_b = self._parse_gacha_table()
 
     def _parse_gacha_table(self) -> tuple[Track, Track] :
-        """Parses the gacha table and returns a tuple of Track A and Track B."""
+        """解析轉蛋表格並回傳 Track A 與 Track B 的 tuple。"""
         soup = BeautifulSoup(self.html_content, "html.parser")
         table = soup.find("table")
         if not table:
-            return (Track("A"), Track("B"))
+            raise ValueError("無法解析 HTML: 找不到轉蛋表格")
 
         rows = table.find_all("tr")
         
@@ -35,7 +35,7 @@ class BCParser:
         return (track_a, track_b)
 
     def _parse_track_a(self, rows: List) -> Track:
-        """Scans and parses all slots on Track A."""
+        """掃描並解析 Track A 上的所有格子。"""
         slots = []
         row_index = 0
         while row_index < len(rows):
@@ -58,7 +58,7 @@ class BCParser:
         return Track("A", slots)
 
     def _parse_track_b(self, rows: List) -> Track:
-        """Scans and parses all slots on Track B."""
+        """掃描並解析 Track B 上的所有格子。"""
         slots = []
         row_index = 0
         while row_index < len(rows):
@@ -81,7 +81,7 @@ class BCParser:
         return Track("B", slots)
 
     def _parse_slot_a(self, all_rows, start_idx, id_td) -> GachaSlot:
-        """Helper to extract data for a single slot on Track A."""
+        """解析 Track A 單一格子的資料。"""
         match = re.match(self.regex_a, id_td.get("id", ""))
         slot_id = (int(match.group(1)), match.group(2))
         rowspan = int(id_td.get("rowspan", 1))
@@ -100,13 +100,13 @@ class BCParser:
 
             res, gua, pos = self._extract_cols_data(target_cols)
             
-            # Update result and guaranteed with conflict check
+            # Update result and guaranteed (allow overwrite for Duplicate Rare corrections)
             if res:
-                res_text = res if not res_text else ParseStatus.MULTIPLE_DATA
+                res_text = res
             if gua:
-                gua_text = gua if not gua_text else ParseStatus.MULTIPLE_DATA
+                gua_text = gua
             if pos:
-                next_pos = pos if not next_pos else ParseStatus.MULTIPLE_DATA
+                next_pos = pos
 
         return GachaSlot(
             id=slot_id,
@@ -116,7 +116,7 @@ class BCParser:
         )
 
     def _parse_slot_b(self, all_rows: List, start_idx: int, id_td: Tag) -> GachaSlot:
-        """Helper to extract data for a single slot on Track B."""
+        """解析 Track B 單一格子的資料。"""
         match = re.match(self.regex_b, id_td.get("id", ""))
         slot_id = (int(match.group(1)), match.group(2))
         rowspan = int(id_td.get("rowspan", 1))
@@ -135,13 +135,13 @@ class BCParser:
 
             res, gua, pos = self._extract_cols_data(target_cols)
             
-            # Update result and guaranteed with conflict check
+            # Update result and guaranteed (allow overwrite for Duplicate Rare corrections)
             if res:
-                res_text = res if not res_text else ParseStatus.MULTIPLE_DATA
+                res_text = res
             if gua:
-                gua_text = gua if not gua_text else ParseStatus.MULTIPLE_DATA
+                gua_text = gua
             if pos:
-                next_pos = pos if not next_pos else ParseStatus.MULTIPLE_DATA
+                next_pos = pos
 
         return GachaSlot(
             id=slot_id,
@@ -151,10 +151,10 @@ class BCParser:
         )
 
     def _extract_cols_data(self, target_cols: List[Tag]) -> tuple[str, str, Optional[Position]]:
-        """Common logic to extract result, guaranteed and next position from columns.
+        """從欄位中提取結果、保底與下一個位置的通用邏輯。
 
         Args:
-            target_cols (List[Tag]): The <td> elements containing the gacha result data.
+            target_cols (List[Tag]): 包含轉蛋結果資料的 <td> 元素。
 
         Returns:
             tuple[str, str, Optional[Position]]: (result_text, guaranteed_text, next_position)
@@ -164,16 +164,26 @@ class BCParser:
         next_pos: Optional[Position] = None
 
         if len(target_cols) > 0:
-            # Find cat name in the first data column
+            # Find cat name in the first data column (Result)
             a_tags = target_cols[0].find_all("a")
-            res_text = self._find_cat_name(a_tags)
-        
+            # If multiple names (Duplicate Rare), usually [Original, Replacement]. Pick last.
+            valid_names = self._filter_cat_names(a_tags)
+            res_text = valid_names[-1] if valid_names else ""
+            
+            # Check for track switch (Duplicate Rare) in Result column
+            full_text_0 = target_cols[0].get_text(strip=True)
+            pos_match_0 = re.search(self.regex_next_pos, full_text_0)
+            if pos_match_0:
+                next_pos = Position(id=int(pos_match_0.group(1)), track=pos_match_0.group(2))
+
         if len(target_cols) > 1:
             # Find cat name in the guaranteed column
             a_tags = target_cols[1].find_all("a")
-            gua_text = self._find_cat_name(a_tags)
+            # For Guaranteed, usually single name.
+            gua_names = self._filter_cat_names(a_tags)
+            gua_text = gua_names[0] if gua_names else ""
             
-            # Extract next position from full text (e.g., "-> 123A")
+            # Extract next position from guaranteed column (overwrite if found, usually higher priority or distinct)
             full_text = target_cols[1].get_text(strip=True)
             pos_match = re.search(self.regex_next_pos, full_text)
             if pos_match:
@@ -181,11 +191,8 @@ class BCParser:
         
         return res_text, gua_text, next_pos
 
-    def _find_cat_name(self, a_tags: List[Tag]) -> Union[str, ParseStatus]:
-        """Identifies the cat name from a list of <a> tags by filtering out positions and icons.
-
-        If multiple valid names are found, returns ParseStatus.MULTIPLE_NAMES.
-        """
+    def _filter_cat_names(self, a_tags: List[Tag]) -> List[str]:
+        """從 <a> 標籤列表中識別所有有效貓咪名稱。"""
         found_names = []
         for a in a_tags:
             text = a.get_text(strip=True)
@@ -198,10 +205,7 @@ class BCParser:
             # If it has text and isn't a position/icon, it's a potential cat name
             if text:
                 found_names.append(text)
-
-        if len(found_names) > 1:
-            return ParseStatus.MULTIPLE_DATA
-        return found_names[0] if found_names else ""
+        return found_names
 
     def _validate_track(self, track: Track) -> bool:
         """驗證軌道是否包含連續的 ID。"""
