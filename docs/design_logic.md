@@ -2,19 +2,49 @@
 
 ## 核心演算法
 
-模擬器使用 Dijkstra 演算法 (廣度優先搜尋的一種變體) 來搜尋達成目標的「最小花費 (Minimum Cost)」路徑。
+模擬器使用 **A* 演算法**來搜尋達成目標的「最小花費」路徑。
+
+### A* vs Dijkstra
+
+| 演算法 | 優先級 | 特點 |
+|--------|--------|------|
+| Dijkstra | `cost` | 均勻擴散探索 |
+| **A*** | `cost + heuristic` | 朝目標方向優先探索 |
+
+### 啟發式函數
+
+使用**樂觀估計**：還缺幾隻目標貓 = 至少需要幾抽。
+
+```python
+def _heuristic(collected, target_cats):
+    return len(target_cats - collected)
+```
 
 ## 狀態定義 (SearchState)
 
 每個搜尋節點 (State) 包含以下資訊：
 
-- **Cost**: 目前累積的抽卡次數。
+- **Priority**: A* 的 f 值 (f = g + h)。
+- **Cost**: 目前累積的抽卡次數 (g 值)。
 - **Position**: 目前所在的格子 (ID 與 Track)。
-- **Collected**: 目前已收集到的目標貓咪集合。
+- **Collected**: 目前已收集到的目標貓咪集合 (frozenset)。
+- **state_id**: 唯一狀態識別碼（用於延遲路徑建構）。
+- **parent_id**: 父狀態的 state_id（用於回溯路徑）。
+- **last_step**: 這一步的 GachaStep 資訊。
+- **last_rolled_rare**: 上一抽的稀有貓名稱（用於跨池重複稀有判定）。
+
+### 延遲路徑建構
+
+原本每個狀態儲存完整 path tuple，現改為只記錄 parent_id + last_step：
+
+| 方式 | 記憶體 | 建構成本 |
+|------|--------|----------|
+| 原本 | O(狀態數 × 路徑長度) | 每次複製 tuple |
+| **現在** | O(狀態數) | 只在找到解時回溯 |
 
 ## 狀態轉換 (State Transition)
 
-從任何一個狀態出發，我們可以執行兩種動作：
+從任何一個狀態出發，玩家可以執行兩種動作：
 
 1. **單抽 (Single Roll)**:
     - 花費 +1。

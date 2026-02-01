@@ -82,93 +82,141 @@ class BCParser:
 
     def _parse_slot_a(self, all_rows, start_idx, id_td) -> GachaSlot:
         """解析 Track A 單一格子的資料。"""
-        match = re.match(self.regex_a, id_td.get("id", ""))
-        slot_id = (int(match.group(1)), match.group(2))
-        rowspan = int(id_td.get("rowspan", 1))
-        
-        res_text = ""
-        gua_text = ""
-        next_pos = None
-
-        for i in range(rowspan):
-            curr_row = all_rows[start_idx + i]
-            curr_tds = curr_row.find_all("td")
-            
-            # Track A: Data is at the beginning
-            start_offset = 1 if i == 0 else 0
-            target_cols = curr_tds[start_offset : start_offset + 2]
-
-            res, gua, pos = self._extract_cols_data(target_cols)
-            
-            # Update result and guaranteed (allow overwrite for Duplicate Rare corrections)
-            if res:
-                res_text = res
-            if gua:
-                gua_text = gua
-            if pos:
-                next_pos = pos
-
-        return GachaSlot(
-            id=slot_id,
-            result=res_text,
-            guaranteed=gua_text,
-            next_pos=next_pos
-        )
+        return self._parse_slot(all_rows, start_idx, id_td, track='A')
 
     def _parse_slot_b(self, all_rows: List, start_idx: int, id_td: Tag) -> GachaSlot:
         """解析 Track B 單一格子的資料。"""
-        match = re.match(self.regex_b, id_td.get("id", ""))
+        return self._parse_slot(all_rows, start_idx, id_td, track='B')
+
+    def _parse_slot(self, all_rows: List, start_idx: int, id_td: Tag, track: str) -> GachaSlot:
+        """統一解析單一格子的資料（適用於 Track A 與 Track B）。
+        
+        Args:
+            all_rows: 所有表格列。
+            start_idx: 起始列索引。
+            id_td: 包含格子 ID 的 <td> 元素。
+            track: 軌道類型 ('A' 或 'B')。
+        
+        Returns:
+            解析後的 GachaSlot 物件。
+        """
+        regex = self.regex_a if track == 'A' else self.regex_b
+        match = re.match(regex, id_td.get("id", ""))
         slot_id = (int(match.group(1)), match.group(2))
         rowspan = int(id_td.get("rowspan", 1))
         
-        res_text = ""
-        gua_text = ""
+        all_results = []
+        all_gua = []
+        is_dup_flag = False
         next_pos = None
 
         for i in range(rowspan):
             curr_row = all_rows[start_idx + i]
             curr_tds = curr_row.find_all("td")
             
-            # Track B: Data is at the end
-            end_offset = 1 if i == 0 else 0
-            target_cols = curr_tds[-(end_offset + 2) : len(curr_tds) - end_offset]
+            # 根據軌道類型決定欄位位置
+            target_cols = self._get_target_cols(curr_tds, track, is_first_row=(i == 0))
 
-            res, gua, pos = self._extract_cols_data(target_cols)
+            res, gua, pos, orig, dup, orig_gua = self._extract_cols_data(target_cols)
             
-            # Update result and guaranteed (allow overwrite for Duplicate Rare corrections)
+            # 累積結果
+            if orig:
+                all_results.append(orig)
             if res:
-                res_text = res
+                all_results.append(res)
+            
+            # 累積保底
+            if orig_gua:
+                all_gua.append(orig_gua)
             if gua:
-                gua_text = gua
+                all_gua.append(gua)
+            
+            if dup:
+                is_dup_flag = True
+
             if pos:
                 next_pos = pos
 
+        # 後處理：決定最終的 result 與 original_result
+        res_text, orig_res_text, is_dup = self._finalize_results(all_results, is_dup_flag)
+        gua_text, orig_gua_text = self._finalize_guaranteed(all_gua)
+
         return GachaSlot(
-            id=slot_id,
+            id=Position(slot_id[0], slot_id[1]),
             result=res_text,
             guaranteed=gua_text,
-            next_pos=next_pos
+            next_pos=next_pos,
+            original_result=orig_res_text,
+            original_guaranteed=orig_gua_text,
+            is_duplicate_rare=is_dup
         )
 
-    def _extract_cols_data(self, target_cols: List[Tag]) -> tuple[str, str, Optional[Position]]:
-        """從欄位中提取結果、保底與下一個位置的通用邏輯。
+    def _get_target_cols(self, curr_tds: List[Tag], track: str, is_first_row: bool) -> List[Tag]:
+        """根據軌道類型與列位置，取得目標欄位。"""
+        if track == 'A':
+            start_offset = 1 if is_first_row else 0
+            return curr_tds[start_offset : start_offset + 2]
+        else:  # Track B
+            end_offset = 1 if is_first_row else 0
+            return curr_tds[-(end_offset + 2) : len(curr_tds) - end_offset] if end_offset else curr_tds[-2:]
+
+    def _finalize_results(self, all_results: List[str], is_dup_flag: bool) -> tuple[str, Optional[str], bool]:
+        """後處理結果列表，決定最終 result 與 original_result。"""
+        res_text = ""
+        orig_res_text = None
+        is_dup = is_dup_flag
+        
+        if all_results:
+            if len(all_results) > 1:
+                res_text = all_results[-1]
+                orig_res_text = all_results[0]
+                is_dup = True
+            else:
+                res_text = all_results[0]
+        
+        return res_text, orig_res_text, is_dup
+
+    def _finalize_guaranteed(self, all_gua: List[str]) -> tuple[str, Optional[str]]:
+        """後處理保底列表，決定最終 guaranteed 與 original_guaranteed。"""
+        gua_text = ""
+        orig_gua_text = None
+        
+        if all_gua:
+            gua_text = all_gua[-1]
+            if len(all_gua) > 1:
+                orig_gua_text = all_gua[0]
+        
+        return gua_text, orig_gua_text
+
+
+
+    def _extract_cols_data(self, target_cols: List[Tag]) -> tuple[str, str, Optional[Position], Optional[str], bool, Optional[str]]:
+        """從欄位中提取結果、保底、下一個位置、原始結果與重複狀態。
 
         Args:
             target_cols (List[Tag]): 包含轉蛋結果資料的 <td> 元素。
 
         Returns:
-            tuple[str, str, Optional[Position]]: (result_text, guaranteed_text, next_position)
+            tuple: (result_text, guaranteed_text, next_position, original_result, is_duplicate, original_guaranteed)
         """
         res_text = ""
         gua_text = ""
         next_pos: Optional[Position] = None
+        orig_res = None
+        is_dup = False
+        orig_gua = None
 
         if len(target_cols) > 0:
             # Find cat name in the first data column (Result)
             a_tags = target_cols[0].find_all("a")
             # If multiple names (Duplicate Rare), usually [Original, Replacement]. Pick last.
             valid_names = self._filter_cat_names(a_tags)
-            res_text = valid_names[-1] if valid_names else ""
+            
+            if valid_names:
+                res_text = valid_names[-1]
+                if len(valid_names) > 1:
+                    orig_res = valid_names[0]
+                    is_dup = True
             
             # Check for track switch (Duplicate Rare) in Result column
             full_text_0 = target_cols[0].get_text(strip=True)
@@ -181,7 +229,11 @@ class BCParser:
             a_tags = target_cols[1].find_all("a")
             # For Guaranteed, usually single name.
             gua_names = self._filter_cat_names(a_tags)
-            gua_text = gua_names[0] if gua_names else ""
+            
+            if gua_names:
+                gua_text = gua_names[-1]
+                if len(gua_names) > 1:
+                    orig_gua = gua_names[0]
             
             # Extract next position from guaranteed column (overwrite if found, usually higher priority or distinct)
             full_text = target_cols[1].get_text(strip=True)
@@ -189,7 +241,7 @@ class BCParser:
             if pos_match:
                 next_pos = Position(id=int(pos_match.group(1)), track=pos_match.group(2))
         
-        return res_text, gua_text, next_pos
+        return res_text, gua_text, next_pos, orig_res, is_dup, orig_gua
 
     def _filter_cat_names(self, a_tags: List[Tag]) -> List[str]:
         """從 <a> 標籤列表中識別所有有效貓咪名稱。"""
@@ -212,9 +264,9 @@ class BCParser:
         if not track:
             return False
         
-        expected_id = track[0].id[0]
+        expected_id = track[0].id.id
         for slot in track:
-            if slot.id[0] != expected_id:
+            if slot.id.id != expected_id:
                 return False
             expected_id += 1
         return True
