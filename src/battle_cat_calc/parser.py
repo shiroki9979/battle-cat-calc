@@ -1,6 +1,6 @@
 import re
 from bs4 import BeautifulSoup, Tag
-from typing import List, Optional, Union
+from typing import List, Optional, Set, Tuple, Union
 from .models import GachaSlot, Position, ParseStatus, Track
 
 class BCParser:
@@ -13,7 +13,7 @@ class BCParser:
         self.regex_next_pos = r'(?:->|<-)\s*(\d+)([AB])'
         self.track_a, self.track_b = self._parse_gacha_table()
 
-    def _parse_gacha_table(self) -> tuple[Track, Track] :
+    def _parse_gacha_table(self) -> Tuple[Track, Track]:
         """解析轉蛋表格並回傳 Track A 與 Track B 的 tuple。"""
         soup = BeautifulSoup(self.html_content, "html.parser")
         table = soup.find("table")
@@ -160,7 +160,7 @@ class BCParser:
             end_offset = 1 if is_first_row else 0
             return curr_tds[-(end_offset + 2) : len(curr_tds) - end_offset] if end_offset else curr_tds[-2:]
 
-    def _finalize_results(self, all_results: List[str], is_dup_flag: bool) -> tuple[str, Optional[str], bool]:
+    def _finalize_results(self, all_results: List[str], is_dup_flag: bool) -> Tuple[str, Optional[str], bool]:
         """後處理結果列表，決定最終 result 與 original_result。"""
         res_text = ""
         orig_res_text = None
@@ -176,7 +176,7 @@ class BCParser:
         
         return res_text, orig_res_text, is_dup
 
-    def _finalize_guaranteed(self, all_gua: List[str]) -> tuple[str, Optional[str]]:
+    def _finalize_guaranteed(self, all_gua: List[str]) -> Tuple[str, Optional[str]]:
         """後處理保底列表，決定最終 guaranteed 與 original_guaranteed。"""
         gua_text = ""
         orig_gua_text = None
@@ -190,7 +190,7 @@ class BCParser:
 
 
 
-    def _extract_cols_data(self, target_cols: List[Tag]) -> tuple[str, str, Optional[Position], Optional[str], bool, Optional[str]]:
+    def _extract_cols_data(self, target_cols: List[Tag]) -> Tuple[str, str, Optional[Position], Optional[str], bool, Optional[str]]:
         """從欄位中提取結果、保底、下一個位置、原始結果與重複狀態。
 
         Args:
@@ -271,7 +271,7 @@ class BCParser:
             expected_id += 1
         return True
 
-    def get_all_cats(self) -> set[str]:
+    def get_all_cats(self) -> Set[str]:
         """獲取所有軌道中出現過的貓咪種類集合。"""
         cats = set()
         for track in [self.track_a, self.track_b]:
@@ -282,5 +282,5 @@ class BCParser:
                     cats.add(slot.guaranteed)
         return cats
 
-    def get_tracks(self) -> tuple[Track, Track]:
+    def get_tracks(self) -> Tuple[Track, Track]:
         return self.track_a, self.track_b

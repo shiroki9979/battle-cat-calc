@@ -2,23 +2,16 @@
 
 ## 核心演算法
 
-模擬器使用 **A* 演算法**來搜尋達成目標的「最小花費」路徑。
+模擬器使用 **Dijkstra 演算法**來搜尋達成目標的「最小花費」路徑。
 
-### A* vs Dijkstra
+### 演算法選擇
 
 | 演算法 | 優先級 | 特點 |
 |--------|--------|------|
-| Dijkstra | `cost` | 均勻擴散探索 |
-| **A*** | `cost + heuristic` | 朝目標方向優先探索 |
+| **Dijkstra** | `cost` | 保證最佳解，均勻擴散探索 |
+| A* | `cost + heuristic` | 較快但需要啟發式函數 |
 
-### 啟發式函數
-
-使用**樂觀估計**：還缺幾隻目標貓 = 至少需要幾抽。
-
-```python
-def _heuristic(collected, target_cats):
-    return len(target_cats - collected)
-```
+選擇 Dijkstra 的原因：**簡單、穩定、保證最佳解**。
 
 ## 狀態定義 (SearchState)
 
@@ -76,3 +69,82 @@ graph TD
     
     GenericPush --> PQ
 ```
+
+---
+
+## 記憶體優化技術
+
+### 問題：狀態爆炸
+
+多池模式下，狀態數量呈指數成長：
+
+| 因素 | 影響 |
+|------|------|
+| N 個池子 | 分支因子 × N |
+| 單抽 + 保底 | 分支因子 × 2 |
+| 目標貓咪組合 | 2^目標數 種狀態 |
+
+**範例**：2 池、200 步、10 個目標 → 可能產生數百萬狀態 → OOM
+
+---
+
+### 解決方案：Beam Search
+
+Beam Search 是 A* 的**記憶體受限變體**，透過限制佇列大小來控制資源使用。
+
+#### 原理
+
+```
+完整 A*：保留所有可能的狀態
+Beam Search：只保留「最有希望」的 K 個狀態
+```
+
+#### 實作
+
+```python
+# find_best_path 參數
+beam_width: Optional[int] = None  # None = 完整 A*, 數值 = 限制
+
+# 觸發條件：佇列超過 2 倍寬度時清理
+if beam_width is not None and len(pq) > beam_width * 2:
+    pq = heapq.nsmallest(beam_width, pq)  # 只保留最好的
+    heapq.heapify(pq)
+```
+
+#### 祖先鏈保留
+
+清理佇列時，同步清理 `state_map`，但**必須保留祖先鏈**：
+
+```
+pq 中的狀態 → 回溯所有 parent_id → 這些都要保留
+其他狀態 → 可以刪除
+```
+
+這確保 `_reconstruct_path()` 能正確回溯路徑。
+
+#### 使用建議
+
+| beam_width | 記憶體 | 解的品質 |
+|------------|--------|----------|
+| `None` | 無限制 | 保證最佳 |
+| `50000` | ~500MB | 通常接近最佳 |
+| `10000` | ~100MB | 可能略差 |
+
+#### 權衡
+
+> [!IMPORTANT]
+> Beam Search **不保證找到最佳解**，但可以：
+> - 避免 OOM 崩潰
+> - 在合理時間內找到「還不錯」的解
+
+---
+
+## 技術總覽
+
+| 技術 | 目的 | 實作位置 |
+|------|------|----------|
+| **A* 搜尋** | 快速找到最佳解 | `find_best_path` |
+| **啟發式函數** | 引導搜尋方向 | `_heuristic` |
+| **延遲路徑建構** | 減少記憶體 | `parent_id` + `_reconstruct_path` |
+| **Beam Search** | 限制狀態數量 | `beam_width` 參數 |
+| **祖先鏈保留** | 確保路徑可回溯 | `_collect_ancestor_ids` |

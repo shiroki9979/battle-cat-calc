@@ -130,18 +130,26 @@ print(f"共有 {len(all_cats)} 種不同的貓咪")
 
 ## GachaSimulator
 
-使用 Dijkstra 演算法搜尋最佳抽卡路徑。
+使用 A*/Dijkstra 演算法搜尋最佳抽卡路徑。支援單池與多池模式。
 
 ### 建構子
 
 ```python
-GachaSimulator(track_a: Track, track_b: Track)
+GachaSimulator(track_a_or_pools: Union[Track, List[GachaPool]], track_b: Optional[Track] = None)
 ```
+
+**單池模式：**
 
 | 參數 | 型別 | 必填 | 說明 |
 |------|------|------|------|
-| `track_a` | `Track` | 是 | Track A 資料 |
+| `track_a_or_pools` | `Track` | 是 | Track A 資料 |
 | `track_b` | `Track` | 是 | Track B 資料 |
+
+**多池模式：**
+
+| 參數 | 型別 | 必填 | 說明 |
+|------|------|------|------|
+| `track_a_or_pools` | `List[GachaPool]` | 是 | 轉蛋池列表 |
 
 ### 方法
 
@@ -151,41 +159,37 @@ GachaSimulator(track_a: Track, track_b: Track)
 def find_best_path(
     start_pos: Position,
     target_cats: Set[str],
-    max_rolls: int
-) -> Optional[Dict]
+    max_rolls: int,
+    progress_callback: Optional[Callable] = None,
+    beam_width: Optional[int] = None,
+    prefer_guaranteed: bool = False
+) -> Optional[GachaResult]
 ```
 
 搜尋花費最少的抽卡路徑來收集所有目標貓咪。
 
-| 參數 | 型別 | 必填 | 說明 |
-|------|------|------|------|
-| `start_pos` | `Position` | 是 | 起始位置 |
-| `target_cats` | `Set[str]` | 是 | 目標貓咪名稱集合 |
-| `max_rolls` | `int` | 是 | 最大抽卡次數限制 |
+| 參數 | 型別 | 必填 | 預設值 | 說明 |
+|------|------|------|--------|------|
+| `start_pos` | `Position` | 是 | - | 起始位置 |
+| `target_cats` | `Set[str]` | 是 | - | 目標貓咪名稱集合 |
+| `max_rolls` | `int` | 是 | - | 最大抽卡次數限制 |
+| `progress_callback` | `Optional[Callable]` | 否 | `None` | 進度回調，傳入 `(current_cost, states_processed, queue_size)` |
+| `beam_width` | `Optional[int]` | 否 | `None` | Beam Search 寬度限制。`None` 為完整 A* 搜尋。建議值：10000–50000。使用 Beam Search 可能無法找到最佳解 |
+| `prefer_guaranteed` | `bool` | 否 | `False` | 是否偏好十連抽。為 `True` 時單抽成本加小懲罰 (1.11)，讓演算法在成本相近時優先選擇十連抽 |
 
-**回傳值**: `Optional[Dict]`
+**回傳值**: `Optional[GachaResult]`
 
-成功時回傳:
-
-```python
-{
-    "total_cost": int,        # 總花費抽數
-    "path": Tuple[GachaStep], # 路徑步驟
-    "collected": Set[str]     # 收集到的貓咪
-}
-```
-
-找不到路徑時回傳 `None`。
+成功時回傳 `GachaResult` 物件（見下方資料模型），找不到路徑時回傳 `None`。
 
 ### 使用範例
+
+**單池模式（向後相容）：**
 
 ```python
 from battle_cat_calc.simulator import GachaSimulator
 from battle_cat_calc.models import Position
 
-# 從 parser 取得 tracks
 sim = GachaSimulator(track_a, track_b)
-
 result = sim.find_best_path(
     start_pos=Position(1, 'A'),
     target_cats={"影傑貓", "飛翔貓"},
@@ -193,11 +197,28 @@ result = sim.find_best_path(
 )
 
 if result:
-    print(f"最少需要 {result['total_cost']} 抽")
-    for step in result['path']:
-        print(f"  {step.source} -> {step.target}: 獲得 {step.unit}")
+    print(result.to_summary())
 else:
     print("在限制內找不到路徑")
+```
+
+**多池模式：**
+
+```python
+from battle_cat_calc.simulator import GachaSimulator
+from battle_cat_calc.models import Position, GachaPool
+
+pools = [
+    GachaPool(pool_id="ultra_souls", name="超靈魂祭", track_a=ta1, track_b=tb1),
+    GachaPool(pool_id="dark_heroes", name="闇英雄", track_a=ta2, track_b=tb2, guaranteed_cost=15),
+]
+sim = GachaSimulator(pools)
+result = sim.find_best_path(
+    start_pos=Position(1, 'A'),
+    target_cats={"影傑貓", "飛翔貓"},
+    max_rolls=100,
+    beam_width=20000
+)
 ```
 
 ---
@@ -241,10 +262,59 @@ class GachaStep:
     source: Position           # 起始位置
     target: Position           # 目標位置
     unit: str                  # 獲得的貓咪
+    pool_id: str = ""          # 在哪個池抽的
     is_guaranteed: bool        # 是否為保底抽
     is_track_switch: bool      # 是否發生跳軌
+    is_duplicate_rare: bool    # 是否因重複稀有跳軌
     context_data: Optional[dict] = None  # 額外上下文資訊
 ```
+
+### GachaPool
+
+代表一個轉蛋活動池，用於多池模式。
+
+```python
+@dataclass
+class GachaPool:
+    pool_id: str              # 池子識別碼 (e.g., "ultra_souls")
+    name: str                 # 顯示名稱 (e.g., "超靈魂祭")
+    track_a: Track            # Track A 資料
+    track_b: Track            # Track B 資料
+    has_guaranteed: bool = True  # 是否有必中選項
+    guaranteed_cost: int = 10    # 必中的抽數成本
+```
+
+### GachaResult
+
+模擬結果的結構化封裝，包含便利屬性與序列化方法。
+
+```python
+@dataclass
+class GachaResult:
+    total_cost: int                     # 總花費抽數
+    path: Tuple[GachaStep, ...]         # 路徑步驟
+    collected: Set[str]                 # 收集到的貓咪
+    start_pos: Optional[Position]       # 起始位置
+    target_cats: Optional[Set[str]]     # 目標貓咪
+```
+
+**屬性：**
+
+| 屬性 | 型別 | 說明 |
+|------|------|------|
+| `step_count` | `int` | 路徑中的步數 |
+| `guaranteed_count` | `int` | 十連抽的次數 |
+| `single_roll_count` | `int` | 單抽的次數 |
+| `pools_used` | `Set[str]` | 使用到的池子 ID 集合 |
+| `end_pos` | `Optional[Position]` | 結束位置 |
+
+**方法：**
+
+| 方法 | 回傳值 | 說明 |
+|------|--------|------|
+| `to_summary()` | `str` | 生成易讀的摘要字串 |
+| `to_dict()` | `Dict` | 轉換為可序列化的字典 |
+| `steps_by_pool()` | `Dict[str, List[GachaStep]]` | 依池子分組的步驟 |
 
 ### Track
 
@@ -257,3 +327,41 @@ class Track(UserList):
     def get_slot(index: int) -> Optional[GachaSlot]
         """取得指定 ID 的格子 (1-based)"""
 ```
+
+---
+
+## SeedAnalyzer
+
+分析已解析的轉蛋資料，提供查詢功能。
+
+### 建構子
+
+```python
+SeedAnalyzer(slots: Track)
+```
+
+| 參數 | 型別 | 必填 | 說明 |
+|------|------|------|------|
+| `slots` | `Track` | 是 | 軌道資料 |
+
+### 方法
+
+#### `find_cat_by_name`
+
+```python
+def find_cat_by_name(name: str) -> List[GachaSlot]
+```
+
+以名稱搜尋貓咪在軌道中出現的所有位置（模糊比對）。
+
+**回傳值**: `List[GachaSlot]` — 符合的格子列表
+
+#### `get_next_guaranteed`
+
+```python
+def get_next_guaranteed() -> Optional[GachaSlot]
+```
+
+找出下一個有保底結果的格子。
+
+**回傳值**: `Optional[GachaSlot]` — 找到的格子或 `None`

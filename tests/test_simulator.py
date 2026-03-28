@@ -95,9 +95,9 @@ def test_simulator_parse_status_termination():
     res1 = sim.find_best_path(Position(1, 'A'), {"Cat1"}, 5)
     assert res1 is not None
     
-    # Try to find Cat2 (which doesn't exist). Should fail because it hits ParseStatus at 2A.
-    res2 = sim.find_best_path(Position(1, 'A'), {"NotExists"}, 5)
-    assert res2 is None
+    # Try to find Cat2 (which doesn't exist). Should raise ValueError.
+    with pytest.raises(ValueError, match="NotExists"):
+        sim.find_best_path(Position(1, 'A'), {"NotExists"}, 5)
 
 def test_simulator_duplicate_rare_switch():
     """測試重複稀有導致的跳軌。

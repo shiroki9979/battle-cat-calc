@@ -1,24 +1,24 @@
-from typing import List, Optional, Union
+from typing import List, Optional
 from .models import GachaSlot, Track, ParseStatus
 
 class SeedAnalyzer:
-    """Analyzes parsed gacha data."""
+    """分析已解析的轉蛋資料。"""
     
     def __init__(self, slots: Track):
         self.slots = slots
 
     def find_cat_by_name(self, name: str) -> List[GachaSlot]:
-        """Finds all occurrences of a cat by name in the slots."""
+        """依名稱搜尋所有符合的格子，跳過 ParseStatus 類型的結果。"""
         results = []
         for slot in self.slots:
-            # Ensure result is a string before searching
-            res_str = str(slot.result) if isinstance(slot.result, ParseStatus) else slot.result
-            if name in res_str:
+            if isinstance(slot.result, ParseStatus):
+                continue
+            if name in slot.result:
                 results.append(slot)
         return results
 
     def get_next_guaranteed(self) -> Optional[GachaSlot]:
-        """Finds the next guaranteed slot if available."""
+        """取得下一個可用的保底格子。"""
         for slot in self.slots:
             if slot.guaranteed and not isinstance(slot.guaranteed, ParseStatus):
                 return slot

@@ -1,6 +1,6 @@
 import pytest
 from bs4 import BeautifulSoup, Tag
-from battle_cat_calc.models import GachaSlot, ParseStatus
+from battle_cat_calc.models import GachaSlot, ParseStatus, Position
 from battle_cat_calc.parser import BCParser
 
 class TestEnhancedModels:

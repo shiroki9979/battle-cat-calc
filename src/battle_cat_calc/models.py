@@ -37,16 +37,15 @@ class Track(UserList):
     def __init__(self, name: str, slots: List[GachaSlot] = None):
         super().__init__(slots or [])
         self.name = name
+        # 建立 id → slot 的索引，將 get_slot 從 O(n) 降為 O(1)
+        self._index: Dict[int, GachaSlot] = {s.id.id: s for s in self.data}
 
     def __repr__(self):
         return f"Track(name='{self.name}', slots={len(self.data)})"
 
     def get_slot(self, index: int) -> Optional[GachaSlot]:
-        """傳回指定索引 (1-based ID) 的格子。"""
-        for slot in self.data:
-            if slot.id.id == index:
-                return slot
-        return None
+        """傳回指定索引 (1-based ID) 的格子。O(1) 查找。"""
+        return self._index.get(index)
 
 
 @dataclass
