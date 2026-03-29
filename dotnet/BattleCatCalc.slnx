@@ -1,0 +1,14 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/BattleCatCalc.Api/BattleCatCalc.Api.csproj" />
+    <Project Path="src/BattleCatCalc.Application/BattleCatCalc.Application.csproj" />
+    <Project Path="src/BattleCatCalc.Core/BattleCatCalc.Core.csproj" />
+    <Project Path="src/BattleCatCalc.Infrastructure/BattleCatCalc.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/BattleCatCalc.Api.Tests/BattleCatCalc.Api.Tests.csproj" />
+    <Project Path="tests/BattleCatCalc.Application.Tests/BattleCatCalc.Application.Tests.csproj" />
+    <Project Path="tests/BattleCatCalc.Core.Tests/BattleCatCalc.Core.Tests.csproj" />
+    <Project Path="tests/BattleCatCalc.Infrastructure.Tests/BattleCatCalc.Infrastructure.Tests.csproj" />
+  </Folder>
+</Solution>
