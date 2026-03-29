@@ -4,6 +4,25 @@
 
 ---
 
+## 2026/03/29
+
+### Added
+
+#### AI 輔助開發
+
+- **領域專家 Agent** (`.github/agents/domain-expert.agent.md`)：貓咪大戰爭轉蛋機制領域專家，提供種子追蹤、軌道切換、保底機制等問答。
+- **測試慣例指令** (`.github/instructions/test-conventions.instructions.md`)：`tests/**` 自動注入的測試撰寫規範，含三段式 docstring、fixture 載入、非同步測試模式。
+- **.NET 開發指令** (`.github/instructions/dotnet.instructions.md`)：`dotnet/**` 自動注入的 C# 開發規範，含命名、模型、分層、日誌、錯誤處理慣例。
+- **HTML 解析測試產生 Prompt** (`.github/prompts/parse-html.prompt.md`)：從 HTML fixture 自動產生 BCParser 測試案例。
+- **提交前準備 Prompt** (`.github/prompts/pre-commit.prompt.md`)：掃描變更、撰寫 CHANGELOG、產生 commit message 的工作流。
+- **Gacha Simulation Skill** (`.github/skills/gacha-simulation/SKILL.md`)：GachaSimulator 演算法修改工作流，含 SearchState 欄位、9 項不變量、常見陷阱。
+
+### Changed
+
+- **`.github/copilot-instructions.md`**：補充無 linter/formatter 說明、`models.py` 描述更新（Track 繼承 UserList、ParseStatus 列舉）、新增測試 docstring 三段式與 fixture 慣例。
+
+---
+
 ## 2026/03/28
 
 ### Added

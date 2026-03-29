@@ -20,6 +20,8 @@ uv sync               # 安裝所有依賴（Python ≥ 3.12）
 uv run pytest         # 執行測試
 ```
 
+專案未配置 linter 或 formatter（無 ruff、black、mypy）。型別正確性以 Type Hints 與 code review 維護。
+
 ## 架構
 
 資料流為線性：**擷取 → 解析 → 模擬**，另有分析工具輔助。
@@ -27,7 +29,7 @@ uv run pytest         # 執行測試
 | 模組 | 職責 |
 |------|------|
 | `config.py` | 常數（`BASE_URL`、`DEFAULT_LANG`、`DEFAULT_COUNT`） |
-| `models.py` | 所有資料結構 — `@dataclass` 型別、`Track`、`GachaSlot`、`Position`、`GachaPool`、列舉 |
+| `models.py` | 所有資料結構 — `@dataclass` 型別、`Track`（繼承 `UserList`，O(1) 查找）、`GachaSlot`、`Position`、`GachaPool`、`ParseStatus` 列舉（解析異常哨兵值） |
 | `fetcher.py` | `BCDataFetcher` — 非同步 httpx 客戶端，爬取 bc.godfat.org |
 | `parser.py` | `BCParser` — BeautifulSoup 將 HTML 解析為 Track A / Track B |
 | `simulator.py` | `GachaSimulator` — Dijkstra / A* / Beam Search 路徑最佳化 |
@@ -88,6 +90,8 @@ uv run pytest         # 執行測試
 - 使用 mock/stub 隔離外部依賴（網路、時間），確保測試具備確定性（Deterministic）。
 - 禁止測試之間共享可變狀態；每個測試需能獨立執行且可重複。
 - 若提交包含核心邏輯的程式碼，主動提供對應的單元測試。
+- 測試 docstring 採三段式：**動機**（Why）→ **方法**（How）→ **驗證**（Assert）。
+- 整合測試使用 `tests/fixtures/` 下的真實 HTML 回應檔案（如 `seed_*_event_*.html`）。
 
 ## 領域術語
 
