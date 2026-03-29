@@ -38,6 +38,14 @@ uv run pytest         # 執行測試
 
 演算法細節見 [docs/design_logic.md](../docs/design_logic.md)。API 規格見 [docs/api_reference.md](../docs/api_reference.md)。
 
+### .NET 子專案（dotnet/）
+
+Python 版本的 C# 遷移，採 Clean Architecture 四層（Core → Infrastructure → Application → Api）。前端為 React + TypeScript（Vite），桌面版透過 Photino 封裝自託管 Kestrel + WebView 視窗。
+
+- 架構決策：[dotnet/docs/architecture.md](../dotnet/docs/architecture.md)
+- 模組對應：[dotnet/docs/migration-mapping.md](../dotnet/docs/migration-mapping.md)
+- C# 慣例：`.github/instructions/dotnet.instructions.md`（自動套用於 `dotnet/**`）
+
 ## 程式碼風格
 
 ### 通用原則
@@ -72,26 +80,17 @@ uv run pytest         # 執行測試
 
 ## 測試
 
-### 專案設定
+```bash
+uv run pytest         # 執行全部測試
+```
 
 - 使用 pytest + pytest-asyncio；以 `unittest.mock`（`AsyncMock`、`patch`）模擬 HTTP 請求。
 - `tests/conftest.py` 將 `src/` 加入 `sys.path`。
 - 測試檔案對應原始模組（`test_fetcher.py`、`test_parser.py`、`test_simulator.py` 等）。
-
-### 測試案例覆蓋範圍
-
-- **Happy Path**：標準輸入應產生預期輸出。
-- **Sad Path**：無效輸入、外部依賴失敗、權限不足等異常情境。
-- **Edge Cases**：空值、零值、極大/極小值、臨界邊界、並發競爭條件（若適用）。
-
-### 測試原則
-
-- 每個測試案例只驗證單一行為，測試名稱需清楚描述情境與預期結果。
-- 使用 mock/stub 隔離外部依賴（網路、時間），確保測試具備確定性（Deterministic）。
-- 禁止測試之間共享可變狀態；每個測試需能獨立執行且可重複。
-- 若提交包含核心邏輯的程式碼，主動提供對應的單元測試。
-- 測試 docstring 採三段式：**動機**（Why）→ **方法**（How）→ **驗證**（Assert）。
 - 整合測試使用 `tests/fixtures/` 下的真實 HTML 回應檔案（如 `seed_*_event_*.html`）。
+- 若提交包含核心邏輯的程式碼，主動提供對應的單元測試。
+
+詳細測試慣例（docstring 格式、fixture 載入、覆蓋範圍原則）見 `.github/instructions/test-conventions.instructions.md`（自動套用於 `tests/**`）。
 
 ## 領域術語
 
@@ -101,3 +100,5 @@ uv run pytest         # 執行測試
 | 重複稀有 | 連續抽到相同稀有貓 → 觸發軌道切換 A↔B |
 | 保底（十連抽保底） | 特殊抽卡機制，具有固定成本 |
 | 多池（Multi-pool） | 合併多個轉蛋池，各池可有不同保底成本 |
+
+機制詳解見 [docs/gacha_mechanics_zh_TW.md](../docs/gacha_mechanics_zh_TW.md)（技術向）與 [docs/gacha_mechanics_player_guide_zh_TW.md](../docs/gacha_mechanics_player_guide_zh_TW.md)（玩家向）。

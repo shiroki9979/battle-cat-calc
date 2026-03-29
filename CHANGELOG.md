@@ -1,10 +1,49 @@
+<!-- markdownlint-disable-file MD024 -->
 # Changelog
 
 所有重要變更皆記錄於此檔案。格式參考 [Keep a Changelog](https://keepachangelog.com/)。
 
 ---
 
-## 2026/03/29
+## 2026/03/29 (4)
+
+### Changed
+
+- **`.github/copilot-instructions.md`**：新增 .NET 子專案段落與文件連結、精簡測試章節（詳細慣例移至 instructions）、補充轉蛋機制文件連結。
+- **`.github/prompts/pre-commit.prompt.md`**：每個 commit 對應獨立 CHANGELOG section、commit 指令改用純文字 + inline code 避免 VS Code Chat 折疊。
+
+### Added
+
+- **文件同步檢查 Prompt** (`.github/prompts/docs-audit.prompt.md`)：掃描程式碼與文件交叉比對，找出過時或缺漏的文件並直接修正。
+
+---
+
+## 2026/03/29 (3)
+
+### Changed
+
+- **`dotnet/README.md`**：進度清單大幅更新（Core/Infrastructure/Application/Api 全部已完成）、新增 Desktop/Client 段落、更新相依套件表與開發順序。
+- **`dotnet/docs/architecture.md`**：新增 ADR-8（Photino + Kestrel 自託管桌面架構）、更新分層依賴圖（加入 Desktop 與 Client）、DI 註冊策略調整。
+- **`dotnet/docs/migration-mapping.md`**：模組狀態全面更新（待實作→已完成）、新增 Desktop 與 Client 對應列。
+
+---
+
+## 2026/03/29 (2)
+
+### Added
+
+#### .NET 全層實作
+
+- **`BattleCatCalc.Core`**：領域模型（`Position`、`GachaSlot`、`SlotValue`、`Track`、`GachaPool`、`GachaStep`、`GachaResult`）、`ParseStatus` enum、4 個介面（`IFetcher`、`IParser`、`ISimulator`、`IAnalyzer`）、例外階層（`BattleCatCalcException` → `ParseException` / `FetchException` / `SimulationException`）。
+- **`BattleCatCalc.Infrastructure`**：`BCDataFetcher`（HttpClient）、`BCParser`（AngleSharp HTML 解析）。
+- **`BattleCatCalc.Application`**：`GachaSimulator`（A* / Beam Search，單池＋多池，支配性與可達性剪枝）、`SeedAnalyzer`（貓咪查詢、保底位置搜尋）、`SearchState` readonly record struct。
+- **`BattleCatCalc.Api`**：ASP.NET Core Minimal API（Kestrel 自託管），含 Controllers、Contracts（DTO）、`ExceptionHandlingMiddleware`（Problem Details RFC 9457）、OpenAPI、NLog、Static Files 中介軟體。
+- **`BattleCatCalc.slnx`**：Solution 檔案（slnx 格式）。
+- **.NET 測試合計**：162 tests 全數通過（Core 47 + Infrastructure 44 + Application 33 + Api 38）。
+
+---
+
+## 2026/03/29 (1)
 
 ### Added
 

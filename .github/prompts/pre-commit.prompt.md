@@ -44,25 +44,26 @@ git log --oneline -5         # 最近 5 筆 commit，掌握上下文
 
 若變更具高度關聯性（如一個功能 + 其測試 + 其文件），保持單一 commit。
 
-### 4. 撰寫 CHANGELOG 條目
+### 4. 為每個 commit 撰寫 CHANGELOG 條目與 commit message
+
+每個 commit 各自對應一組 CHANGELOG 條目與 commit message，一併產出。
+
+#### CHANGELOG 格式
 
 讀取 [CHANGELOG.md](../../CHANGELOG.md) 的既有格式，嚴格遵循：
 
 - 日期標題：`## YYYY/MM/DD`
+- 若同一天有多筆 commit，以 `## YYYY/MM/DD (N)` 區分（N 為當日第 N 個區塊）
 - 分類：`### Added` / `### Changed` / `### Fixed` / `### Removed`
 - 需要時以模組子標題分組：`#### 模組名稱 (\`file.py\`)`
 - 條目格式：`- **名稱**：說明。`
 - 語言：正體中文
 
-產出的條目直接可貼入 CHANGELOG.md 對應日期區塊下方。若當日區塊已存在，合併至既有分類。
+每個 commit 寫入一個獨立的 CHANGELOG section，依 commit 順序由新到舊排列於檔案中。
 
-### 5. 產生 commit message
+#### Commit message 格式
 
-格式遵循 [Conventional Commits](https://www.conventionalcommits.org/)：
-
-```
-<type>(<scope>): <簡述>
-```
+遵循 [Conventional Commits](https://www.conventionalcommits.org/)：`<type>(<scope>): <簡述>`
 
 規則：
 - `type`：feat / fix / refactor / test / docs / chore / perf
@@ -70,30 +71,30 @@ git log --oneline -5         # 最近 5 筆 commit，掌握上下文
 - 簡述：**正體中文**，50 字元內
 - 若有 breaking change 或重要細節，附加 body（空一行後以正體中文撰寫）
 
-若建議拆分 commit，為每個 commit 各產生一則 message。
+### 5. 提供 commit 指令
 
-### 6. 提供 commit 指令
+完成 CHANGELOG 更新與 staging 後，**不自動執行 `git commit`**。將完整的 commit 指令輸出供使用者手動執行。
 
-完成 CHANGELOG 更新與 staging 後，**不自動執行 `git commit`**。將完整的 `git commit` 指令（含 message）輸出供使用者手動執行。
+**輸出限制**：不使用 fenced code block（VS Code Chat 會折疊隱藏）。改用純文字搭配 inline code 格式，例如：
+
+**Commit 1 staging：** `git add file1 file2`
+
+**Commit 1 message：** feat(scope): 簡述
+
+**Commit 1 body：** 補充說明（若有）
 
 ## 輸出格式
 
-```
-## 變更掃描
+輸出分為兩大區塊。第一區塊為變更掃描與拆分建議：
 
-<staged/unstaged 狀態摘要>
-<按模組分組的變更列表>
+**變更掃描** — staged/unstaged 狀態摘要，按模組分組的變更列表。
 
-## 拆分建議
+**拆分建議** — 若適用，列出每個 commit 的檔案分組；若不需拆分，簡述原因。
 
-<若適用，列出每個 commit 的檔案與 staging 指令>
-<若不需拆分，說明原因>
+第二區塊依每個 commit 逐一列出 CHANGELOG 條目、commit message 與 staging 指令。格式如下：
 
-## CHANGELOG 條目
+**Commit N — 簡述**
 
-<可直接貼入的 markdown 文字>
+CHANGELOG 條目（直接寫入 CHANGELOG.md 後確認）
 
-## Commit Message
-
-<一或多則 commit message>
-```
+staging 指令與 commit message（純文字 + inline code，不使用 fenced code block）
