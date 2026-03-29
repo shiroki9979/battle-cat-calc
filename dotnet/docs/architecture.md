@@ -1,6 +1,7 @@
 # 架構決策紀錄
 
-> 建立日期：2026-03-29
+> 建立日期：2026-03-29  
+> 最後更新：2026-03-29
 
 ## 分層架構
 
@@ -11,11 +12,15 @@ graph LR
     Core["Core<br/>模型 + 介面"]
     Infra["Infrastructure<br/>HTTP + HTML 解析"]
     App["Application<br/>Simulator + Analyzer"]
-    Api["Api<br/>Web API"]
+    Api["Api<br/>MVC Controllers + Kestrel"]
+    Desktop["Desktop<br/>Photino 視窗殼"]
+    Client["Client<br/>React + TypeScript"]
 
     Api --> App --> Core
     Infra --> Core
     Api --> Infra
+    Desktop --> Api
+    Client -.->|HTTP| Api
 ```
 
 ### 依賴規則
@@ -23,7 +28,9 @@ graph LR
 - **Core** 不依賴任何其他專案，不引用外部 NuGet 套件
 - **Infrastructure** 依賴 Core（實作介面），引用 AngleSharp
 - **Application** 依賴 Core（使用模型與介面），不直接依賴 Infrastructure
-- **Api** 依賴以上所有，負責 DI 組裝
+- **Api** 依賴以上所有，負責 DI 組裝、提供 HTTP 端點
+- **Desktop** 依賴 Api，負責啟動 Kestrel + Photino 視窗
+- **Client**（React）透過 HTTP 對接 Api，無直接專案參考
 
 ### 為何不是兩層
 
@@ -42,11 +49,11 @@ Python 版將所有邏輯放在同一層級（`src/battle_cat_calc/`），可行
 
 ### ADR-1: 模型使用 record / record struct
 
-| Python | C# | 理由 |
-|--------|----|------|
-| `@dataclass` | `record class` | 值語意、內建 `Equals`/`GetHashCode`、`with` 表達式 |
-| `@dataclass(frozen=True, slots=True)` | `readonly record struct` | 零配置不可變、堆疊配置、記憶體效率 |
-| `frozenset` | `ImmutableHashSet<T>` 或 `FrozenSet<T>` (.NET 8+) | 不可變集合，可作為 Dictionary key |
+| Python                                | C#                                                | 理由                                               |
+| ------------------------------------- | ------------------------------------------------- | -------------------------------------------------- |
+| `@dataclass`                          | `record class`                                    | 值語意、內建 `Equals`/`GetHashCode`、`with` 表達式 |
+| `@dataclass(frozen=True, slots=True)` | `readonly record struct`                          | 零配置不可變、堆疊配置、記憶體效率                 |
+| `frozenset`                           | `ImmutableHashSet<T>` 或 `FrozenSet<T>` (.NET 8+) | 不可變集合，可作為 Dictionary key                  |
 
 **SearchState** 應為 `readonly record struct`：
 
@@ -64,12 +71,12 @@ Python 版 `Track` 繼承 `UserList` 取得列表 API。C# 中：
 
 ### ADR-3: 錯誤處理策略
 
-| Python | C# | 場景 |
-|--------|-----|------|
-| `ValueError` | `ArgumentException` / 自訂 `ParseException` | 解析失敗 |
-| `Optional[T]` | `T?`（nullable reference）或 `GachaSlot?`（nullable struct） | 搜尋未命中 |
-| `httpx.HTTPStatusError` | `HttpRequestException` | 網路錯誤 |
-| `ParseStatus` enum 哨兵值 | `SlotValue` discriminated union 或保留 enum | 解析異常標記 |
+| Python                    | C#                                                           | 場景         |
+| ------------------------- | ------------------------------------------------------------ | ------------ |
+| `ValueError`              | `ArgumentException` / 自訂 `ParseException`                  | 解析失敗     |
+| `Optional[T]`             | `T?`（nullable reference）或 `GachaSlot?`（nullable struct） | 搜尋未命中   |
+| `httpx.HTTPStatusError`   | `HttpRequestException`                                       | 網路錯誤     |
+| `ParseStatus` enum 哨兵值 | `SlotValue` discriminated union 或保留 enum                  | 解析異常標記 |
 
 考慮使用 Result pattern（`OneOf<T, Error>` 套件）取代例外，特別是在 Simulator 的高頻路徑上。
 
@@ -101,14 +108,15 @@ classDiagram
     }
 ```
 
-| 例外 | 所屬層 | 場景 |
-|------|--------|------|
-| `BattleCatCalcException` | Core | 專案例外基底類別，攜帶通用上下文 |
-| `ParseException` | Infrastructure | HTML 結構不符預期、找不到轉蛋表格、欄位解析失敗 |
-| `FetchException` | Infrastructure | HTTP 逾時、非 200 回應、連線失敗 |
-| `SimulationException` | Application | 搜尋超出 max_rolls、無可行路徑、狀態不一致 |
+| 例外                     | 所屬層         | 場景                                            |
+| ------------------------ | -------------- | ----------------------------------------------- |
+| `BattleCatCalcException` | Core           | 專案例外基底類別，攜帶通用上下文                |
+| `ParseException`         | Infrastructure | HTML 結構不符預期、找不到轉蛋表格、欄位解析失敗 |
+| `FetchException`         | Infrastructure | HTTP 逾時、非 200 回應、連線失敗                |
+| `SimulationException`    | Application    | 搜尋超出 max_rolls、無可行路徑、狀態不一致      |
 
 設計原則：
+
 - 基底類別定義於 Core，各層定義自己的衍生例外
 - 每個例外攜帶足夠上下文資訊（seed、position、HTML 片段等），方便偵錯
 - Controller 層統一捕獲 `BattleCatCalcException` 轉為適當的 HTTP 狀態碼
@@ -140,8 +148,8 @@ pq.Enqueue(state, state.Priority);
 // API 層註冊
 services.AddHttpClient<IFetcher, BCDataFetcher>();
 services.AddSingleton<IParser, BCParser>();
-services.AddTransient<ISimulator, GachaSimulator>();
-services.AddTransient<IAnalyzer, SeedAnalyzer>();
+// Simulator / Analyzer 為 per-request 建立，不註冊 DI
+// Controller 取得 Track 後直接 new GachaSimulator(pools) / new SeedAnalyzer(trackA, trackB)
 ```
 
 ### ADR-7: 日誌策略
@@ -161,33 +169,76 @@ builder.Logging.AddNLog();
 - Parser 無狀態，可 Singleton
 - Simulator 攜帶搜尋狀態，Transient
 
+### ADR-8: 桌面應用架構（Photino + Kestrel 自託管）
+
+採用 **self-hosted desktop app** 模式，前後端分離：
+
+```mermaid
+sequenceDiagram
+    participant Main as Program.Main
+    participant Kestrel as Kestrel (localhost:0)
+    participant Photino as Photino Window
+    participant React as React UI
+
+    Main->>Kestrel: StartAsync()
+    Kestrel-->>Main: 取得實際 port
+    Main->>Photino: Load(http://localhost:{port})
+    Photino->>React: 渲染 SPA
+    React->>Kestrel: fetch(/api/v1/...)
+    Kestrel-->>React: JSON response
+    Note over Photino: 使用者操作 UI
+    Photino-->>Main: WaitForClose()
+    Main->>Kestrel: StopAsync()
+```
+
+**決策理由：**
+
+| 方案                  | 考量                                     |
+| --------------------- | ---------------------------------------- |
+| WPF + WebView2        | Windows only，但此專案不需原生控項       |
+| Avalonia + WebView    | 跨平台，但多一層抽象無實際用途           |
+| Blazor WASM           | 零安裝，但 WASM 運算效能不及原生         |
+| **Photino + Kestrel** | 輕量、用系統 WebView、API 與 UI 完全解耦 |
+
+**關鍵設計點：**
+
+- **Port 綁定**：`localhost:0` 取隨機可用 port，避免衝突
+- **生命週期**：視窗關閉觸發 `StopAsync()`，確保 Kestrel 正確釋放資源
+- **開發模式**：React 用 `npm run dev` 獨立運行（Vite dev server + proxy），不需每次都完整打包
+- **生產模式**：React build 產出物放入 `wwwroot/`，Kestrel 用 `UseStaticFiles()` serve
+- **跨平台潛力**：Photino 支援 macOS/Linux，未來可擴展；目前先做 Windows
+- **CORS**：localhost 自連，不需 CORS 設定
+
+此架構與 Electron 概念相似，但不捆 Chromium，打包體積大幅縮小。
+
 ## 測試策略
 
-| 層 | 測試重點 | Mock 對象 |
-|----|---------|----------|
-| Core.Tests | 模型建構、值相等、集合行為 | 無（純邏輯） |
-| Infrastructure.Tests | HTML 解析正確性、HTTP 錯誤處理 | HttpClient（`MockHttpMessageHandler`） |
-| Application.Tests | 路徑搜尋正確性、剪枝行為、邊界條件 | IParser 回傳預建 Track |
-| fixtures/ | 與 Python 版共用 `seed_*_event_*.html` | — |
+| 層                   | 測試重點                               | Mock 對象                              |
+| -------------------- | -------------------------------------- | -------------------------------------- |
+| Core.Tests           | 模型建構、值相等、集合行為             | 無（純邏輯）                           |
+| Infrastructure.Tests | HTML 解析正確性、HTTP 錯誤處理         | HttpClient（`MockHttpMessageHandler`） |
+| Application.Tests    | 路徑搜尋正確性、剪枝行為、邊界條件     | IParser 回傳預建 Track                 |
+| fixtures/            | 與 Python 版共用 `seed_*_event_*.html` | —                                      |
 
 ## API 端點設計（預定）
 
 ### 基本資訊
 
-- 框架：ASP.NET Core Minimal API 或 Controller
+- 框架：ASP.NET Core Minimal API（Kestrel 自託管）
 - 路由前綴：`/api/v1`
 - 回應格式：JSON（`System.Text.Json`）
 - 錯誤回應：統一 Problem Details（RFC 9457）
+- 靜態檔案：`UseStaticFiles()` serve React build 產出物（`wwwroot/`）
 
 ### 端點規劃
 
-| 方法 | 路徑 | 說明 | 對應模組 |
-|------|------|------|---------|
-| `GET` | `/api/v1/tracks` | 取得指定種子與活動的 Track A/B 資料 | Fetcher + Parser |
-| `POST` | `/api/v1/simulate` | 執行路徑搜尋，回傳最佳路徑 | Simulator |
-| `GET` | `/api/v1/cats/search` | 依名稱搜尋貓咪在軌道上的位置 | Analyzer |
-| `GET` | `/api/v1/cats/guaranteed` | 搜尋指定貓咪的保底位置 | Analyzer |
-| `GET` | `/api/v1/health` | 健康檢查 | — |
+| 方法   | 路徑                      | 說明                                | 對應模組         |
+| ------ | ------------------------- | ----------------------------------- | ---------------- |
+| `GET`  | `/api/v1/tracks`          | 取得指定種子與活動的 Track A/B 資料 | Fetcher + Parser |
+| `POST` | `/api/v1/simulate`        | 執行路徑搜尋，回傳最佳路徑          | Simulator        |
+| `GET`  | `/api/v1/cats/search`     | 依名稱搜尋貓咪在軌道上的位置        | Analyzer         |
+| `GET`  | `/api/v1/cats/guaranteed` | 搜尋指定貓咪的保底位置              | Analyzer         |
+| `GET`  | `/api/v1/health`          | 健康檢查                            | —                |
 
 ### Request / Response 範例
 
@@ -207,6 +258,7 @@ builder.Logging.AddNLog();
 #### `POST /api/v1/simulate`
 
 Request:
+
 ```json
 {
   "seed": "2127986414",
@@ -222,6 +274,7 @@ Request:
 ```
 
 Response:
+
 ```json
 {
   "totalCost": 23,
@@ -251,10 +304,10 @@ Response:
 
 ### 例外 → HTTP 狀態碼對應
 
-| 例外 | HTTP Status | 說明 |
-|------|-------------|------|
-| `ParseException` | 422 Unprocessable Entity | HTML 結構無法解析 |
-| `FetchException` | 502 Bad Gateway | 上游 bc.godfat.org 錯誤 |
-| `SimulationException` | 400 Bad Request | 搜尋條件不合理（無可行路徑） |
-| `ArgumentException` | 400 Bad Request | 參數驗證失敗 |
-| 未預期例外 | 500 Internal Server Error | 記錄日誌，不洩漏內部細節 |
+| 例外                  | HTTP Status               | 說明                         |
+| --------------------- | ------------------------- | ---------------------------- |
+| `ParseException`      | 422 Unprocessable Entity  | HTML 結構無法解析            |
+| `FetchException`      | 502 Bad Gateway           | 上游 bc.godfat.org 錯誤      |
+| `SimulationException` | 400 Bad Request           | 搜尋條件不合理（無可行路徑） |
+| `ArgumentException`   | 400 Bad Request           | 參數驗證失敗                 |
+| 未預期例外            | 500 Internal Server Error | 記錄日誌，不洩漏內部細節     |

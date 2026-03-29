@@ -6,15 +6,17 @@
 
 ## 模組對應總覽
 
-| Python 模組 | C# 專案 | C# 命名空間 | 狀態 |
-|-------------|--------|-------------|------|
-| `models.py` | Core | `BattleCatCalc.Core.Models` | 待實作 |
-| `config.py` | Core | `BattleCatCalc.Core` | 待實作 |
-| `fetcher.py` | Infrastructure | `BattleCatCalc.Infrastructure.Fetching` | 待實作 |
-| `parser.py` | Infrastructure | `BattleCatCalc.Infrastructure.Parsing` | 待實作 |
-| `simulator.py` | Application | `BattleCatCalc.Application.Simulation` | 待實作 |
-| `analyzer.py` | Application | `BattleCatCalc.Application.Analysis` | 待實作 |
-| `main.py` | Api | `BattleCatCalc.Api` | 後期 |
+| Python 模組    | C# 專案        | C# 命名空間                             | 狀態   |
+| -------------- | -------------- | --------------------------------------- | ------ |
+| `models.py`    | Core           | `BattleCatCalc.Core.Models`             | 已完成 |
+| `config.py`    | Core           | `BattleCatCalc.Core`                    | 待實作 |
+| `fetcher.py`   | Infrastructure | `BattleCatCalc.Infrastructure.Fetching` | 已完成 |
+| `parser.py`    | Infrastructure | `BattleCatCalc.Infrastructure.Parsing`  | 已完成 |
+| `simulator.py` | Application    | `BattleCatCalc.Application.Simulation`  | 已完成 |
+| `analyzer.py`  | Application    | `BattleCatCalc.Application.Analysis`    | 已完成 |
+| `main.py`      | Desktop        | `BattleCatCalc.Desktop`                 | 待實作 |
+| —              | Api            | `BattleCatCalc.Api`                     | 已完成 |
+| —              | Client (React) | `dotnet/client/`                        | 待實作 |
 
 ## 型別對應
 
@@ -86,13 +88,13 @@ SeedAnalyzer                        →   IAnalyzer
 
 ### Track 容器
 
-| Python | C# |
-|--------|----|
+| Python                                  | C#                                                |
+| --------------------------------------- | ------------------------------------------------- |
 | `Track` 繼承 `UserList`，直接當 list 用 | `Track` 實作 `IReadOnlyList<GachaSlot>`，組合模式 |
-| `track[0]` 取第一個 slot | `track[0]` 同（透過 indexer） |
-| `track.get_slot(1)` O(1) 查找 | `track.GetSlot(1)` O(1) 查找（內部 Dictionary） |
-| `len(track)` | `track.Count` |
-| `for slot in track` | `foreach (var slot in track)` |
+| `track[0]` 取第一個 slot                | `track[0]` 同（透過 indexer）                     |
+| `track.get_slot(1)` O(1) 查找           | `track.GetSlot(1)` O(1) 查找（內部 Dictionary）   |
+| `len(track)`                            | `track.Count`                                     |
+| `for slot in track`                     | `foreach (var slot in track)`                     |
 
 ### Union 型別處理
 
@@ -128,18 +130,18 @@ bisect.bisect_left(positions, current_pos)
 
 ## 測試對應
 
-| Python 測試檔 | C# 測試類別 | 層級 |
-|---------------|------------|------|
-| `test_models.py` | `Core.Tests/Models/` | Core |
-| `test_enhanced_models.py` | `Core.Tests/Models/` | Core |
-| `test_fetcher.py` | `Infrastructure.Tests/Fetching/` | Infrastructure |
-| `test_fetcher_errors.py` | `Infrastructure.Tests/Fetching/` | Infrastructure |
-| `test_parser.py` | `Infrastructure.Tests/Parsing/` | Infrastructure |
-| `test_parser_edge.py` | `Infrastructure.Tests/Parsing/` | Infrastructure |
-| `test_simulator.py` | `Application.Tests/Simulation/` | Application |
-| `test_simulator_advanced.py` | `Application.Tests/Simulation/` | Application |
-| `test_multi_pool.py` | `Application.Tests/Simulation/` | Application |
-| `test_analyzer.py` | `Application.Tests/Analysis/` | Application |
-| `test_snapshot.py` | `Infrastructure.Tests/Parsing/` | Infrastructure |
+| Python 測試檔                | C# 測試類別                      | 層級           |
+| ---------------------------- | -------------------------------- | -------------- |
+| `test_models.py`             | `Core.Tests/Models/`             | Core           |
+| `test_enhanced_models.py`    | `Core.Tests/Models/`             | Core           |
+| `test_fetcher.py`            | `Infrastructure.Tests/Fetching/` | Infrastructure |
+| `test_fetcher_errors.py`     | `Infrastructure.Tests/Fetching/` | Infrastructure |
+| `test_parser.py`             | `Infrastructure.Tests/Parsing/`  | Infrastructure |
+| `test_parser_edge.py`        | `Infrastructure.Tests/Parsing/`  | Infrastructure |
+| `test_simulator.py`          | `Application.Tests/Simulation/`  | Application    |
+| `test_simulator_advanced.py` | `Application.Tests/Simulation/`  | Application    |
+| `test_multi_pool.py`         | `Application.Tests/Simulation/`  | Application    |
+| `test_analyzer.py`           | `Application.Tests/Analysis/`    | Application    |
+| `test_snapshot.py`           | `Infrastructure.Tests/Parsing/`  | Infrastructure |
 
 Fixture 檔案（`tests/fixtures/seed_*.html`）可與 Python 版共用，透過相對路徑或複製至 .NET 測試目錄。
