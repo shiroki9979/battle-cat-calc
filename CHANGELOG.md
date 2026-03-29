@@ -17,6 +17,13 @@
 - **提交前準備 Prompt** (`.github/prompts/pre-commit.prompt.md`)：掃描變更、撰寫 CHANGELOG、產生 commit message 的工作流。
 - **Gacha Simulation Skill** (`.github/skills/gacha-simulation/SKILL.md`)：GachaSimulator 演算法修改工作流，含 SearchState 欄位、9 項不變量、常見陷阱。
 
+#### .NET 遷移規劃
+
+- **`dotnet/README.md`**：.NET 子專案概述，含目標框架、專案結構、相依套件、開發順序與進度追蹤清單。
+- **`dotnet/docs/architecture.md`**：架構決策紀錄（7 項 ADR），含 Clean Architecture 分層、模型策略、錯誤處理層級、API 端點設計。
+- **`dotnet/docs/migration-mapping.md`**：Python → C# 模組對應、型別轉換、介面定義、行為差異注意事項。
+- **`dotnet/.gitignore`**：.NET 專案 gitignore。
+
 ### Changed
 
 - **`.github/copilot-instructions.md`**：補充無 linter/formatter 說明、`models.py` 描述更新（Track 繼承 UserList、ParseStatus 列舉）、新增測試 docstring 三段式與 fixture 慣例。
