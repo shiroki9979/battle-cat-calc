@@ -1,0 +1,57 @@
+name: battle-cat-calc
+
+x-sdk: &sdk
+  image: battle-cat-calc-sdk
+  platform: linux/amd64
+  build:
+    context: .
+    dockerfile: dotnet/Dockerfile
+    target: sdk
+    args:
+      DEV_UID: ${DEV_UID:-1000}
+      DEV_GID: ${DEV_GID:-1000}
+  volumes:
+    - type: bind
+      source: ./dotnet
+      target: /workspace/dotnet
+      bind:
+        create_host_path: false
+    - type: bind
+      source: ./tests/fixtures
+      target: /workspace/tests/fixtures
+      read_only: true
+      bind:
+        create_host_path: false
+    - nuget:/home/app/.nuget/packages
+    - artifacts:/artifacts
+    - type: bind
+      source: ./test-results
+      target: /test-results
+      bind:
+        create_host_path: false
+
+services:
+  sdk:
+    <<: *sdk
+    profiles: [tools]
+  test:
+    <<: *sdk
+    profiles: [tools]
+    entrypoint: [dotnet, test, BattleCatCalc.slnx, --logger, trx, --collect, "XPlat Code Coverage", --results-directory, /test-results]
+    command: []
+  api:
+    image: battle-cat-calc-api
+    platform: linux/amd64
+    build:
+      context: .
+      dockerfile: dotnet/Dockerfile
+      target: runtime
+    ports:
+      - "5096:8080"
+    volumes:
+      - logs:/app/logs
+
+volumes:
+  nuget:
+  artifacts:
+  logs:

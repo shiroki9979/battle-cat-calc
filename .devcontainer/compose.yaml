@@ -1,0 +1,21 @@
+services:
+  sdk:
+    profiles: !reset []
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: http://0.0.0.0:8080
+      DOTNET_WATCH_SUPPRESS_LAUNCH_BROWSER: "true"
+    ports:
+      - "5096:8080"
+    volumes:
+      - type: bind
+        source: .
+        target: /workspace
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./tests/fixtures
+        target: /workspace/tests/fixtures
+        read_only: false
+        bind:
+          create_host_path: false

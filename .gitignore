@@ -152,4 +152,10 @@ cython_debug/
 .idea/
 
 # VS Code
-.vscode/
+.vscode/*
+!.vscode/tasks.json
+!.vscode/launch.json
+
+# Container test reports
+/test-results/*
+!/test-results/.gitkeep

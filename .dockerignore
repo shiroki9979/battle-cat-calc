@@ -1,0 +1,11 @@
+**
+!dotnet/
+!dotnet/**
+!tests/
+!tests/fixtures/
+!tests/fixtures/**
+dotnet/**/bin/
+dotnet/**/obj/
+dotnet/**/artifacts/
+dotnet/**/logs/
+dotnet/**/TestResults/

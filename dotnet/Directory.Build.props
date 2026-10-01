@@ -1,0 +1,5 @@
+<Project>
+  <PropertyGroup Condition="'$(CONTAINER_ARTIFACTS_PATH)' != ''">
+    <ArtifactsPath>$(CONTAINER_ARTIFACTS_PATH)</ArtifactsPath>
+  </PropertyGroup>
+</Project>
