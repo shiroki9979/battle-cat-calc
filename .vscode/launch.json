@@ -1,0 +1,19 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug API (Dev Container)",
+      "type": "coreclr",
+      "request": "launch",
+      "preLaunchTask": "build API",
+      "program": "/artifacts/bin/BattleCatCalc.Api/debug/BattleCatCalc.Api.dll",
+      "cwd": "${workspaceFolder}/dotnet/src/BattleCatCalc.Api",
+      "console": "internalConsole",
+      "stopAtEntry": false,
+      "env": {
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "ASPNETCORE_URLS": "http://0.0.0.0:8080"
+      }
+    }
+  ]
+}

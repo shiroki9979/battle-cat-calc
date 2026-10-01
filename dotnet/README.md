@@ -3,7 +3,7 @@
 Battle Cats 種子追蹤計算器的 .NET 重寫版本。原始 Python 版本位於上層目錄。
 
 > 建立日期：2026-03-29  
-> 最後更新：2026-03-29
+> 最後更新：2026-10-01
 
 ## 目標
 
@@ -49,7 +49,6 @@ dotnet/
 │   ├── BattleCatCalc.Infrastructure.Tests/
 │   ├── BattleCatCalc.Application.Tests/
 │   ├── BattleCatCalc.Api.Tests/
-│   └── fixtures/                        # 共用 HTML fixture（與 Python 版共用）
 └── docs/
     ├── architecture.md                  # 架構決策紀錄
     └── migration-mapping.md             # Python → C# 模組對應
@@ -78,10 +77,17 @@ dotnet/
 
 ## 建置與測試
 
+從儲存庫根目錄使用 Docker Compose，主機免裝 .NET SDK：
+
 ```bash
-dotnet build
-dotnet test
+docker compose build sdk
+docker compose run --rm sdk dotnet build
+docker compose run --rm test
 ```
+
+完整操作包含 Dev Container、`dotnet watch`、VS Code 除錯、正式 API 部署、
+測試報告與快取清理，詳見 [容器工作流程](docs/containers.md)。
+HTML fixtures 位於儲存庫根目錄的 `tests/fixtures/`，由 Python 與 .NET 共用。
 
 ## 開發順序
 
@@ -184,4 +190,4 @@ dotnet test
 - [x] .gitignore
 - [x] AI 輔助開發指令（dotnet.instructions.md）
 - [x] .slnx + .csproj 檔案建立
-- [ ] CI workflow（GitHub Actions）
+- [x] CI workflow（GitHub Actions：容器測試、正式 image 與 health 檢查）

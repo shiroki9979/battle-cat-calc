@@ -30,3 +30,18 @@ Record genuine glossary gaps for domain-modeling.
 
 Explicitly identify proposals that contradict an existing ADR, citing
 the decision and explaining why reconsideration is warranted.
+
+## Answering Mechanism Questions
+
+For questions about seed tracking, track switching, duplicate rares,
+guarantees, or multiple pools, consult the relevant source before answering:
+
+- `docs/gacha_mechanics_zh_TW.md` for mechanism details.
+- `docs/gacha_mechanics_player_guide_zh_TW.md` for player-facing explanations.
+- `docs/design_logic.md` for search states and transitions.
+- `docs/api_reference.md` for published interfaces.
+
+Cite the document and section supporting each rule. State when the sources do
+not establish an answer. When a question combines game rules and code behavior,
+explain the rule first, then identify the corresponding module or method. For
+explanation-only requests, answer without changing files.

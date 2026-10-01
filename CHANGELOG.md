@@ -1,7 +1,22 @@
 <!-- markdownlint-disable-file MD024 -->
 # Changelog
 
+Created: 2026-03-28
+Last updated: 2026-10-01
+
 所有重要變更皆記錄於此檔案。格式參考 [Keep a Changelog](https://keepachangelog.com/)。
+
+---
+
+## [Unreleased]
+
+### Changed
+
+- 將仍適用的開發規則與領域問答流程整理至 `AGENTS.md`、`docs/agents/domain.md`，並將轉蛋模擬與 HTML 解析測試工作流集中至 `.agents/skills/`。
+
+### Removed
+
+- 移除 `.github` 中的 Copilot 專屬指示、agent、prompt 與舊 skill 入口。
 
 ---
 

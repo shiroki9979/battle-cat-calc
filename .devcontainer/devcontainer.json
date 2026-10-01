@@ -1,0 +1,25 @@
+{
+  "name": "BattleCatCalc .NET",
+  "dockerComposeFile": ["../compose.yaml", "compose.yaml"],
+  "service": "sdk",
+  "runServices": ["sdk"],
+  "workspaceFolder": "/workspace",
+  "remoteUser": "app",
+  "updateRemoteUserUID": false,
+  "shutdownAction": "stopCompose",
+  "postCreateCommand": "dotnet restore /workspace/dotnet/BattleCatCalc.slnx",
+  "customizations": {
+    "vscode": {
+      "extensions": ["ms-dotnettools.csharp"],
+      "settings": {
+        "dotnet.defaultSolution": "dotnet/BattleCatCalc.slnx",
+        "dotnetAcquisitionExtension.existingDotnetPath": [
+          {
+            "extensionId": "ms-dotnettools.csharp",
+            "path": "/usr/share/dotnet/dotnet"
+          }
+        ]
+      }
+    }
+  }
+}
