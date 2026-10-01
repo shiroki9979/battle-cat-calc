@@ -10,6 +10,28 @@ Docker Desktop, Buildx, and Docker Compose 2.24 or later are required. Developme
 in VS Code also requires the Dev Containers extension. The host does not need a
 .NET SDK.
 
+## Make shortcuts
+
+GNU Make and a POSIX shell provide shortcuts from the repository root. `make`
+prints the available targets. Make exports the host UID/GID automatically;
+explicit `DEV_UID` and `DEV_GID` values can override them.
+
+```bash
+make build
+make test
+make test TEST_ARGS='--filter FullyQualifiedName~BCParserSnapshotTests'
+make dev
+```
+
+`restore`, `build`, `test`, `publish`, `shell`, and `dev` first build the SDK image.
+`make image` builds the production image; `make up` also starts it and waits for
+health. Use `make health`, `make logs`, and `make down` to inspect or stop it.
+Before switching from development to production, run `make down` to release port
+5096. The `down` target preserves all volumes and host test reports. `COMPOSE` can
+override the Docker Compose command when a separate Docker configuration is used.
+
+## Image inputs and ownership
+
 The SDK and ASP.NET images use the official `10.0-noble` tags and Linux amd64.
 The tags receive patch updates; rebuild with `--pull` to refresh the base images.
 The repository root is the build context because .NET and Python share the HTML
