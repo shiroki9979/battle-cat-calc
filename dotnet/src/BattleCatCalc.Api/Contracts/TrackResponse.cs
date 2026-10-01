@@ -44,6 +44,12 @@ public sealed class SlotDto
     [JsonPropertyName("isDuplicateRare")]
     public bool IsDuplicateRare { get; init; }
 
+    [JsonPropertyName("rarity")]
+    public string? Rarity { get; init; }
+
+    [JsonPropertyName("guaranteedRarity")]
+    public string? GuaranteedRarity { get; init; }
+
     public static SlotDto FromModel(GachaSlot slot) => new()
     {
         Id = slot.Id.Id,
@@ -51,7 +57,9 @@ public sealed class SlotDto
         Result = slot.Result.ToString(),
         Guaranteed = slot.Guaranteed.ToString(),
         NextPos = slot.NextPos is { } np ? PositionDto.FromModel(np) : null,
-        IsDuplicateRare = slot.IsDuplicateRare
+        IsDuplicateRare = slot.IsDuplicateRare,
+        Rarity = slot.Rarity?.ToString(),
+        GuaranteedRarity = slot.GuaranteedRarity?.ToString()
     };
 }
 

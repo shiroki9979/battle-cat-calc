@@ -20,4 +20,14 @@ public interface IFetcher
         string lang = "en",
         int count = 100,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Fetches the home page HTML (used to extract the event list).
+    /// </summary>
+    /// <param name="lang">Language code (default: "en").</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Raw HTML string of the home page.</returns>
+    Task<string> FetchHomePageHtmlAsync(
+        string lang = "en",
+        CancellationToken cancellationToken = default);
 }

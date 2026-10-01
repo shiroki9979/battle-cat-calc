@@ -45,4 +45,27 @@ public sealed class BCDataFetcher : IFetcher
                 ex.StatusCode);
         }
     }
+
+    public async Task<string> FetchHomePageHtmlAsync(
+        string lang = "en",
+        CancellationToken cancellationToken = default)
+    {
+        var query = $"?lang={Uri.EscapeDataString(lang)}";
+
+        try
+        {
+            var response = await _httpClient.GetAsync(BaseUrl + query, cancellationToken);
+            response.EnsureSuccessStatusCode();
+            return await response.Content.ReadAsStringAsync(cancellationToken);
+        }
+        catch (HttpRequestException ex)
+        {
+            throw new FetchException(
+                $"Failed to fetch home page: {ex.Message}",
+                ex,
+                seed: "",
+                eventId: "",
+                ex.StatusCode);
+        }
+    }
 }

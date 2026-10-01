@@ -1,0 +1,30 @@
+/* 稀有度顏色：以 data-rarity attribute 驅動，自動依 light/dark 切換
+ * 搭配 @theme inline 中的 --color-rarity-* 變數使用 */
+
+[data-rarity='Rare'] {
+  color: var(--color-foreground);
+}
+
+[data-rarity='SuperRare'] {
+  color: var(--color-rarity-super-rare);
+}
+
+[data-rarity='SuperRareFest'] {
+  color: var(--color-rarity-super-rare-fest);
+}
+
+[data-rarity='UberRare'] {
+  color: var(--color-rarity-uber);
+}
+
+[data-rarity='UberRareFest'] {
+  color: var(--color-rarity-uber-fest);
+}
+
+[data-rarity='Exclusive'] {
+  color: var(--color-rarity-exclusive);
+}
+
+[data-rarity='Legend'] {
+  color: var(--color-rarity-legend);
+}

@@ -13,4 +13,11 @@ public interface IParser
     /// <param name="html">Raw HTML string from the seed tracking service.</param>
     /// <returns>A tuple of (TrackA, TrackB).</returns>
     (Track TrackA, Track TrackB) Parse(string html);
+
+    /// <summary>
+    /// Parses the home page HTML to extract the event dropdown list.
+    /// </summary>
+    /// <param name="html">Raw HTML of the home page.</param>
+    /// <returns>List of available events grouped by category.</returns>
+    IReadOnlyList<EventInfo> ParseEventList(string html);
 }

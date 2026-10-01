@@ -19,6 +19,7 @@ public class Program
         // DI 註冊（ADR-6）
         builder.Services.AddHttpClient<IFetcher, BCDataFetcher>();
         builder.Services.AddSingleton<IParser, BCParser>();
+        builder.Services.AddMemoryCache();
 
         // MVC Controllers
         builder.Services.AddControllers();

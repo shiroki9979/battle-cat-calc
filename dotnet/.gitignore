@@ -32,6 +32,7 @@ artifacts/
 *.exe
 *.pdb
 *.cache
+*.lscache
 *.[Pp]ublish.xml
 
 ## Test results
