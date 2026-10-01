@@ -32,7 +32,7 @@ public class Program
         // 全域例外處理 → Problem Details
         app.UseMiddleware<ExceptionHandlingMiddleware>();
 
-        // 未來 React build 產出物的靜態檔案
+        app.UseDefaultFiles();
         app.UseStaticFiles();
 
         // OpenAPI endpoint（開發環境）

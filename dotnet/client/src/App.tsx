@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import { useSearchParams } from 'react-router';
 import { SeedInput } from '@/components/SeedInput';
 import { EventSelector } from '@/components/EventSelector';
@@ -107,6 +107,7 @@ function App() {
   const handleSubmit = useCallback(() => {
     if (seed && event) {
       setSubmittedParams({ seed, event, lang, count: Number(count) });
+      setTargets([]);
     }
   }, [seed, event, lang, count]);
 
@@ -132,6 +133,12 @@ function App() {
 
   // --- Simulate ---
   const simulate = useSimulate();
+  const { reset } = simulate;
+
+  useEffect(() => {
+    // Detach the previous mutation so late responses cannot restore stale paths.
+    reset();
+  }, [submittedParams, targets, reset]);
 
   // 路徑步驟 overlay map
   const pathStepMap = useMemo(

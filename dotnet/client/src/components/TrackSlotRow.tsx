@@ -1,6 +1,7 @@
 import type { SlotDto } from '@/types/api';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
+import type { MouseEvent } from 'react';
 
 interface TrackSlotRowProps {
   slot: SlotDto;
@@ -11,6 +12,14 @@ interface TrackSlotRowProps {
 }
 
 export function TrackSlotRow({ slot, isHighlighted, pathStep, onSelect }: TrackSlotRowProps) {
+  const guaranteedPosition = slot.isDuplicateRare ? null : slot.nextPos;
+  const showGuaranteed = !!slot.guaranteed && (guaranteedPosition !== null || slot.guaranteed !== slot.result);
+
+  const selectName = (event: MouseEvent<HTMLButtonElement>, name: string) => {
+    event.stopPropagation();
+    onSelect?.(name);
+  };
+
   return (
     <div
       role="row"
@@ -31,21 +40,25 @@ export function TrackSlotRow({ slot, isHighlighted, pathStep, onSelect }: TrackS
         )}
         {slot.id}{slot.track}
       </span>
-      <span className={cn('truncate py-1.5')} data-rarity={slot.rarity}>{slot.result}</span>
+      <span className="truncate py-1.5" data-rarity={slot.rarity}>
+        <button type="button" className="max-w-full truncate text-left" disabled={!onSelect}
+          onClick={(event) => selectName(event, slot.result)}>{slot.result}</button>
+      </span>
       <span
         className={cn('truncate py-1.5', !slot.guaranteedRarity && 'text-muted-foreground')}
         data-rarity={slot.guaranteedRarity}
       >
-        {!slot.isDuplicateRare && slot.nextPos ? (
-          <>
+        {showGuaranteed && (
+          <button type="button" className="max-w-full truncate text-left" disabled={!onSelect}
+            onClick={(event) => selectName(event, slot.guaranteed)}>
             {slot.guaranteed}
-            <span className="ml-1 text-xs opacity-70">
-              → {slot.nextPos.id}{slot.nextPos.track}
-            </span>
-          </>
-        ) : slot.guaranteed !== slot.result ? (
-          slot.guaranteed
-        ) : null}
+            {guaranteedPosition && (
+              <span className="ml-1 text-xs opacity-70">
+                → {guaranteedPosition.id}{guaranteedPosition.track}
+              </span>
+            )}
+          </button>
+        )}
       </span>
       <span className="py-1.5">
         {slot.isDuplicateRare && (

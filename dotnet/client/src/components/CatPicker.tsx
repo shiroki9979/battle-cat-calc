@@ -15,9 +15,11 @@ function getUniqueCats(data: TrackResponse): string[] {
   const seen = new Set<string>();
   const result: string[] = [];
   for (const slot of [...data.trackA, ...data.trackB]) {
-    if (!seen.has(slot.result)) {
-      seen.add(slot.result);
-      result.push(slot.result);
+    for (const name of [slot.result, slot.guaranteed]) {
+      if (name && !seen.has(name)) {
+        seen.add(name);
+        result.push(name);
+      }
     }
   }
   return result;

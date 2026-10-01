@@ -7,6 +7,7 @@ export default defineConfig({
   retries: process.env.CI ? 2 : 0,
   workers: process.env.CI ? 1 : undefined,
   reporter: 'html',
+  outputDir: process.env.PLAYWRIGHT_OUTPUT_DIR ?? 'test-results',
 
   use: {
     baseURL: 'http://localhost:5173',

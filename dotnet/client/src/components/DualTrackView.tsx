@@ -96,7 +96,7 @@ export function DualTrackView({ data, highlightNames, pathStepMap, onSelectCat }
                   {slotA && (
                     <TrackSlotRow
                       slot={slotA}
-                      isHighlighted={highlightNames?.has(slotA.result)}
+                      isHighlighted={highlightNames?.has(slotA.result) || highlightNames?.has(slotA.guaranteed)}
                       pathStep={keyA ? (pathStepMap?.get(keyA) ?? null) : null}
                       onSelect={onSelectCat}
                     />
@@ -106,7 +106,7 @@ export function DualTrackView({ data, highlightNames, pathStepMap, onSelectCat }
                   {slotB && (
                     <TrackSlotRow
                       slot={slotB}
-                      isHighlighted={highlightNames?.has(slotB.result)}
+                      isHighlighted={highlightNames?.has(slotB.result) || highlightNames?.has(slotB.guaranteed)}
                       pathStep={keyB ? (pathStepMap?.get(keyB) ?? null) : null}
                       onSelect={onSelectCat}
                     />

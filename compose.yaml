@@ -24,6 +24,8 @@ x-sdk: &sdk
         create_host_path: false
     - nuget:/home/app/.nuget/packages
     - artifacts:/artifacts
+    - client_modules:/workspace/dotnet/client/node_modules
+    - client_dist:/workspace/dotnet/client/dist
     - type: bind
       source: ./test-results
       target: /test-results
@@ -38,6 +40,31 @@ services:
     <<: *sdk
     profiles: [tools]
     entrypoint: [dotnet, test, BattleCatCalc.slnx, --logger, trx, --collect, "XPlat Code Coverage", --results-directory, /test-results]
+    command: []
+  client:
+    <<: *sdk
+    profiles: [tools]
+    working_dir: /workspace/dotnet/client
+    environment:
+      API_PROXY_TARGET: http://sdk:8080
+    ports:
+      - "5173:5173"
+    command: [sh, -c, "npm ci && exec npm run dev -- --host 0.0.0.0"]
+  e2e:
+    <<: *sdk
+    image: battle-cat-calc-e2e
+    profiles: [tools]
+    build:
+      context: .
+      dockerfile: dotnet/Dockerfile
+      target: e2e
+      args:
+        DEV_UID: ${DEV_UID:-1000}
+        DEV_GID: ${DEV_GID:-1000}
+    environment:
+      CI: "true"
+      PLAYWRIGHT_HTML_REPORT: /test-results/playwright-report
+      PLAYWRIGHT_OUTPUT_DIR: /test-results/playwright-results
     command: []
   api:
     image: battle-cat-calc-api
@@ -54,4 +81,6 @@ services:
 volumes:
   nuget:
   artifacts:
+  client_modules:
+  client_dist:
   logs:

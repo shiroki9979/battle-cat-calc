@@ -42,8 +42,37 @@ public sealed partial class BCParser : IParser
         ValidateTrack(trackA);
         ValidateTrack(trackB);
 
-        return (trackA, trackB);
+        var catRarities = ReadCatRarities(document);
+        return (ApplyCatRarities(trackA, catRarities), ApplyCatRarities(trackB, catRarities));
     }
+
+    private static IReadOnlyDictionary<string, CatRarity> ReadCatRarities(IDocument document)
+    {
+        var rarities = new Dictionary<string, CatRarity>(StringComparer.Ordinal);
+        foreach (var group in document.QuerySelectorAll("#find_select optgroup"))
+        {
+            CatRarity? rarity = group.GetAttribute("label")?.Trim().TrimEnd(':') switch
+            {
+                "Rare" => CatRarity.Rare,
+                "Super" => CatRarity.SuperRare,
+                "Uber" => CatRarity.UberRare,
+                "Legendary" => CatRarity.Legend,
+                _ => null
+            };
+            if (rarity is null) continue;
+
+            foreach (var option in group.QuerySelectorAll("option"))
+                rarities[option.TextContent.Trim()] = rarity.Value;
+        }
+        return rarities;
+    }
+
+    private static Track ApplyCatRarities(Track track, IReadOnlyDictionary<string, CatRarity> rarities) =>
+        new(track.Name, track.Select(slot => slot with
+        {
+            // Guaranteed cells inherit roll colors; the cat catalog identifies the cat's rarity.
+            GuaranteedRarity = rarities.TryGetValue(slot.Guaranteed.ToString(), out var rarity) ? rarity : null
+        }));
 
     private Track ParseTrack(List<IElement> rows, string trackId)
     {
@@ -94,7 +123,6 @@ public sealed partial class BCParser : IParser
         var isDupFlag = false;
         Position? nextPos = null;
         CatRarity? rarity = null;
-        CatRarity? guaranteedRarity = null;
 
         for (var i = 0; i < rowspan; i++)
         {
@@ -113,7 +141,6 @@ public sealed partial class BCParser : IParser
             if (colData.IsDuplicate) isDupFlag = true;
             if (colData.NextPos is not null) nextPos = colData.NextPos;
             rarity ??= colData.Rarity;
-            guaranteedRarity ??= colData.GuaranteedRarity;
         }
 
         var (resultValue, originalResult, isDuplicate) = FinalizeResults(allResults, isDupFlag);
@@ -127,8 +154,7 @@ public sealed partial class BCParser : IParser
             OriginalResult: originalResult,
             OriginalGuaranteed: originalGuaranteed,
             IsDuplicateRare: isDuplicate,
-            Rarity: rarity,
-            GuaranteedRarity: guaranteedRarity);
+            Rarity: rarity);
     }
 
     /// <summary>
@@ -160,8 +186,7 @@ public sealed partial class BCParser : IParser
         string? OriginalResult,
         bool IsDuplicate,
         string? OriginalGuaranteed,
-        CatRarity? Rarity,
-        CatRarity? GuaranteedRarity);
+        CatRarity? Rarity);
 
     private ColsData ExtractColsData(List<IElement> targetCols)
     {
@@ -172,7 +197,6 @@ public sealed partial class BCParser : IParser
         var isDup = false;
         string? origGua = null;
         CatRarity? rarity = null;
-        CatRarity? guaRarity = null;
 
         if (targetCols.Count > 0)
         {
@@ -220,10 +244,9 @@ public sealed partial class BCParser : IParser
                 nextPos = new Position(int.Parse(posMatch.Groups[1].Value), posMatch.Groups[2].Value);
             }
 
-            guaRarity = ParseRarityFromClass(targetCols[1]);
         }
 
-        return new ColsData(resText, guaText, nextPos, origRes, isDup, origGua, rarity, guaRarity);
+        return new ColsData(resText, guaText, nextPos, origRes, isDup, origGua, rarity);
     }
 
     private static List<string> FilterCatNames(List<IElement> aTags)

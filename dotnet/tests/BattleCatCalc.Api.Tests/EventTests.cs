@@ -37,18 +37,34 @@ public class EventTests(ApiTestFixture fixture) : IClassFixture<ApiTestFixture>
         Assert.Equal("Upcoming", first.Group);
     }
 
-    [Fact]
-    public async Task GetEvents_WithLangParam_Returns200()
+    [Theory]
+    [InlineData("tw")]
+    [InlineData("en")]
+    [InlineData("jp")]
+    [InlineData("kr")]
+    public async Task GetEvents_WithSupportedLanguage_Returns200(string lang)
     {
         /// 動機：lang 查詢參數應被接受但不影響 stub 回傳結果。
-        /// 方法：GET /api/v1/events?lang=ja。
+        /// 方法：GET /api/v1/events?lang=jp。
         /// 驗證：狀態碼 200，結果不變。
-        var response = await _client.GetAsync("/api/v1/events?lang=ja");
+        var response = await _client.GetAsync($"/api/v1/events?lang={lang}");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var events = await response.Content.ReadFromJsonAsync<List<EventDto>>();
         Assert.NotNull(events);
         Assert.Equal(3, events.Count);
+    }
+
+    [Theory]
+    [InlineData("GET", "/api/v1/events")]
+    [InlineData("POST", "/api/v1/events/refresh")]
+    public async Task Events_UnsupportedLanguage_ReturnsBadRequest(string method, string path)
+    {
+        using var request = new HttpRequestMessage(new HttpMethod(method), $"{path}?lang=unknown");
+
+        var response = await _client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     [Fact]

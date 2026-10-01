@@ -1,10 +1,20 @@
 services:
+  client:
+    profiles: !reset []
   sdk:
+    image: battle-cat-calc-e2e
+    build:
+      target: e2e
+    working_dir: /workspace/dotnet
+    entrypoint: []
+    command: [sleep, infinity]
     profiles: !reset []
     environment:
       ASPNETCORE_ENVIRONMENT: Development
       ASPNETCORE_URLS: http://0.0.0.0:8080
       DOTNET_WATCH_SUPPRESS_LAUNCH_BROWSER: "true"
+      PLAYWRIGHT_HTML_REPORT: /test-results/playwright-report
+      PLAYWRIGHT_OUTPUT_DIR: /test-results/playwright-results
     ports:
       - "5096:8080"
     volumes:

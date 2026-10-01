@@ -130,9 +130,9 @@ public class BCParserSnapshotTests
     {
         /// 動機：保底貓（第10使徒）的稀有度應為 uber。
         /// 方法：取 Track A[0]。
-        /// 驗證：GuaranteedRarity 有值。
+        /// 驗證：find_select 的 Uber 分類應優先於保底格的 rare 配色。
         var slot = TrackA[0];
-        Assert.NotNull(slot.GuaranteedRarity);
+        Assert.Equal(CatRarity.UberRare, slot.GuaranteedRarity);
     }
 
     [Theory]

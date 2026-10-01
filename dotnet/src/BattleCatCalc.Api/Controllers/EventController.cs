@@ -2,6 +2,7 @@ using BattleCatCalc.Api.Contracts;
 using BattleCatCalc.Core.Interfaces;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Caching.Memory;
+using System.ComponentModel.DataAnnotations;
 
 namespace BattleCatCalc.Api.Controllers;
 
@@ -14,13 +15,14 @@ public sealed class EventController(IFetcher fetcher, IParser parser, IMemoryCac
 {
     private const string CacheKey = "EventList";
     private static readonly TimeSpan CacheDuration = TimeSpan.FromHours(1);
+    private const string SupportedLanguages = "^(en|tw|jp|kr)$";
 
     /// <summary>
     /// GET /api/v1/events — 取得可用活動清單。
     /// </summary>
     [HttpGet("events")]
     public async Task<IActionResult> GetEventsAsync(
-        [FromQuery] string lang = "en",
+        [FromQuery, RegularExpression(SupportedLanguages)] string lang = "en",
         CancellationToken ct = default)
     {
         var cacheKeyWithLang = $"{CacheKey}_{lang}";
@@ -48,7 +50,7 @@ public sealed class EventController(IFetcher fetcher, IParser parser, IMemoryCac
     /// </summary>
     [HttpPost("events/refresh")]
     public async Task<IActionResult> RefreshEventsAsync(
-        [FromQuery] string lang = "en",
+        [FromQuery, RegularExpression(SupportedLanguages)] string lang = "en",
         CancellationToken ct = default)
     {
         var cacheKeyWithLang = $"{CacheKey}_{lang}";
