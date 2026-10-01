@@ -2,13 +2,17 @@
 # Changelog
 
 Created: 2026-03-28
-Last updated: 2026-10-01
+Last updated: 2026-10-02
 
 所有重要變更皆記錄於此檔案。格式參考 [Keep a Changelog](https://keepachangelog.com/)。
 
 ---
 
 ## [Unreleased]
+
+### Fixed
+
+- 修正多項 Markdown lint 格式規範，包含 MD032（清單前後空行）、MD040（程式碼區塊指定語言）、MD047（檔案結尾換行）與 MD060（表格分隔列空格）（`docs/api_reference.md`、`docs/design_logic.md`、`.agents/skills/gacha-simulation/SKILL.md`、`README.md`）。
 
 ### Changed
 

@@ -28,7 +28,7 @@ description: "修改或擴展 GachaSimulator 演算法的工作流。Use when: �
 `SearchState` 為 `@dataclass(frozen=True, order=True, slots=True)`：
 
 | 欄位 | 型別 | 用途 |
-|------|------|------|
+| --- | --- | --- |
 | `priority` | `float` | A* f-value (`cost + heuristic`)，PQ 排序依據 |
 | `cost` | `float` | 累計抽卡成本（g-value） |
 | `pos_id` | `int` | 當前位置 ID |
@@ -85,6 +85,7 @@ sim = GachaSimulator([pool_a, pool_b])
 ```
 
 必須覆蓋：
+
 - 修改的轉換規則產出正確的 next state
 - 不變量未被破壞（位置單調、路徑鏈完整）
 - 邊界條件（空軌道、單目標、全目標已收集、max_rolls 耗盡）
@@ -104,7 +105,7 @@ uv run pytest tests/test_multi_pool.py tests/test_snapshot.py -v
 ## 效能考量
 
 | 參數 | 值 | 說明 |
-|------|-----|------|
+| --- | --- | --- |
 | `beam_width=None` | 無限 | 保證最優解，記憶體無上限 |
 | `beam_width=50000` | ~500MB | 通常接近最優 |
 | `beam_width=10000` | ~100MB | 可能次優 |

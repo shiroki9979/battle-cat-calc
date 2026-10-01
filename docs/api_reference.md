@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD024 -->
 # API 參考文檔 (API Reference)
 
 本文件提供 `battle_cat_calc` 套件核心類別的 API 說明。
@@ -15,7 +16,7 @@ BCDataFetcher(timeout: int = 10)
 ```
 
 | 參數 | 型別 | 必填 | 預設值 | 說明 |
-|------|------|------|--------|------|
+| --- | --- | --- | --- | --- |
 | `timeout` | `int` | 否 | `10` | HTTP 請求逾時秒數 |
 
 ### 方法
@@ -34,7 +35,7 @@ async def fetch_html(
 從 Godfat 抓取指定種子與活動的 HTML 內容。
 
 | 參數 | 型別 | 必填 | 預設值 | 說明 |
-|------|------|------|--------|------|
+| --- | --- | --- | --- | --- |
 | `seed` | `str` | 是 | - | 玩家的種子編號 |
 | `event` | `str` | 是 | - | 轉蛋活動 ID |
 | `lang` | `str` | 否 | `"tw"` | 語言代碼 (tw/jp/en) |
@@ -78,7 +79,7 @@ BCParser(html_content: str)
 ```
 
 | 參數 | 型別 | 必填 | 說明 |
-|------|------|------|------|
+| --- | --- | --- | --- |
 | `html_content` | `str` | 是 | 從 Godfat 抓取的 HTML 內容 |
 
 **可能的錯誤**:
@@ -88,7 +89,7 @@ BCParser(html_content: str)
 ### 屬性
 
 | 屬性 | 型別 | 說明 |
-|------|------|------|
+| --- | --- | --- |
 | `track_a` | `Track` | Track A 的所有格子 |
 | `track_b` | `Track` | Track B 的所有格子 |
 
@@ -141,14 +142,14 @@ GachaSimulator(track_a_or_pools: Union[Track, List[GachaPool]], track_b: Optiona
 **單池模式：**
 
 | 參數 | 型別 | 必填 | 說明 |
-|------|------|------|------|
+| --- | --- | --- | --- |
 | `track_a_or_pools` | `Track` | 是 | Track A 資料 |
 | `track_b` | `Track` | 是 | Track B 資料 |
 
 **多池模式：**
 
 | 參數 | 型別 | 必填 | 說明 |
-|------|------|------|------|
+| --- | --- | --- | --- |
 | `track_a_or_pools` | `List[GachaPool]` | 是 | 轉蛋池列表 |
 
 ### 方法
@@ -169,7 +170,7 @@ def find_best_path(
 搜尋花費最少的抽卡路徑來收集所有目標貓咪。
 
 | 參數 | 型別 | 必填 | 預設值 | 說明 |
-|------|------|------|--------|------|
+| --- | --- | --- | --- | --- |
 | `start_pos` | `Position` | 是 | - | 起始位置 |
 | `target_cats` | `Set[str]` | 是 | - | 目標貓咪名稱集合 |
 | `max_rolls` | `int` | 是 | - | 最大抽卡次數限制 |
@@ -301,7 +302,7 @@ class GachaResult:
 **屬性：**
 
 | 屬性 | 型別 | 說明 |
-|------|------|------|
+| --- | --- | --- |
 | `step_count` | `int` | 路徑中的步數 |
 | `guaranteed_count` | `int` | 十連抽的次數 |
 | `single_roll_count` | `int` | 單抽的次數 |
@@ -311,7 +312,7 @@ class GachaResult:
 **方法：**
 
 | 方法 | 回傳值 | 說明 |
-|------|--------|------|
+| --- | --- | --- |
 | `to_summary()` | `str` | 生成易讀的摘要字串 |
 | `to_dict()` | `Dict` | 轉換為可序列化的字典 |
 | `steps_by_pool()` | `Dict[str, List[GachaStep]]` | 依池子分組的步驟 |
@@ -341,7 +342,7 @@ SeedAnalyzer(slots: Track)
 ```
 
 | 參數 | 型別 | 必填 | 說明 |
-|------|------|------|------|
+| --- | --- | --- | --- |
 | `slots` | `Track` | 是 | 軌道資料 |
 
 ### 方法
