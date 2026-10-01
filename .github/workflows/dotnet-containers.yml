@@ -21,10 +21,14 @@ jobs:
       - name: Match the runner's file ownership
         run: |
           printf 'DEV_UID=%s\nDEV_GID=%s\n' "$(id -u)" "$(id -g)" >> "$GITHUB_ENV"
-      - name: Build SDK environment
-        run: docker compose build sdk
-      - name: Run all tests
+      - name: Build SDK and browser environments
+        run: docker compose build sdk e2e
+      - name: Typecheck and build the React client
+        run: docker compose run --rm sdk sh -c 'cd client && npm ci && npm run build'
+      - name: Run .NET tests
         run: docker compose run --rm test
+      - name: Run browser tests
+        run: docker compose run --rm e2e
       - name: Upload test and coverage reports
         if: always()
         uses: actions/upload-artifact@v7
@@ -33,6 +37,8 @@ jobs:
           path: |
             test-results/**/*.trx
             test-results/**/coverage.cobertura.xml
+            test-results/playwright-report/**
+            test-results/playwright-results/**
           if-no-files-found: warn
       - name: Build production image
         run: docker compose build api
@@ -40,6 +46,8 @@ jobs:
         run: docker compose up -d --wait --wait-timeout 60 api
       - name: Verify health endpoint
         run: docker compose exec -T api curl --fail --silent --show-error --max-time 5 http://localhost:8080/api/v1/health
+      - name: Verify deployed React client
+        run: docker compose exec -T api curl --fail --silent --show-error --max-time 5 --output /dev/null http://localhost:8080/index.html
       - name: Show container diagnostics
         if: failure()
         run: docker compose logs --no-color

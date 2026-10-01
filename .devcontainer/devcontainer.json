@@ -2,7 +2,7 @@
   "name": "BattleCatCalc .NET",
   "dockerComposeFile": ["../compose.yaml", "compose.yaml"],
   "service": "sdk",
-  "runServices": ["sdk"],
+  "runServices": ["sdk", "client"],
   "workspaceFolder": "/workspace",
   "remoteUser": "app",
   "updateRemoteUserUID": false,

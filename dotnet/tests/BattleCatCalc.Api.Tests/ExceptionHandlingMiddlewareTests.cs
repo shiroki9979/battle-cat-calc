@@ -23,6 +23,10 @@ public class ExceptionHandlingMiddlewareTests
             string seed, string eventId, string lang = "en",
             int count = 100, CancellationToken cancellationToken = default)
             => throw exception;
+
+        public Task<string> FetchHomePageHtmlAsync(
+            string lang = "en", CancellationToken cancellationToken = default)
+            => throw exception;
     }
 
     /// <summary>建立注入 ThrowingFetcher 的測試用 HttpClient。</summary>

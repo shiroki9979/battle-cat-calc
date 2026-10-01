@@ -42,8 +42,37 @@ public sealed partial class BCParser : IParser
         ValidateTrack(trackA);
         ValidateTrack(trackB);
 
-        return (trackA, trackB);
+        var catRarities = ReadCatRarities(document);
+        return (ApplyCatRarities(trackA, catRarities), ApplyCatRarities(trackB, catRarities));
     }
+
+    private static IReadOnlyDictionary<string, CatRarity> ReadCatRarities(IDocument document)
+    {
+        var rarities = new Dictionary<string, CatRarity>(StringComparer.Ordinal);
+        foreach (var group in document.QuerySelectorAll("#find_select optgroup"))
+        {
+            CatRarity? rarity = group.GetAttribute("label")?.Trim().TrimEnd(':') switch
+            {
+                "Rare" => CatRarity.Rare,
+                "Super" => CatRarity.SuperRare,
+                "Uber" => CatRarity.UberRare,
+                "Legendary" => CatRarity.Legend,
+                _ => null
+            };
+            if (rarity is null) continue;
+
+            foreach (var option in group.QuerySelectorAll("option"))
+                rarities[option.TextContent.Trim()] = rarity.Value;
+        }
+        return rarities;
+    }
+
+    private static Track ApplyCatRarities(Track track, IReadOnlyDictionary<string, CatRarity> rarities) =>
+        new(track.Name, track.Select(slot => slot with
+        {
+            // Guaranteed cells inherit roll colors; the cat catalog identifies the cat's rarity.
+            GuaranteedRarity = rarities.TryGetValue(slot.Guaranteed.ToString(), out var rarity) ? rarity : null
+        }));
 
     private Track ParseTrack(List<IElement> rows, string trackId)
     {
@@ -93,6 +122,7 @@ public sealed partial class BCParser : IParser
         var allGuaranteed = new List<string>();
         var isDupFlag = false;
         Position? nextPos = null;
+        CatRarity? rarity = null;
 
         for (var i = 0; i < rowspan; i++)
         {
@@ -100,16 +130,17 @@ public sealed partial class BCParser : IParser
             var currentTds = currentRow.QuerySelectorAll("td").ToList();
             var targetCols = GetTargetCols(currentTds, track, isFirstRow: i == 0);
 
-            var (res, gua, pos, origRes, dup, origGua) = ExtractColsData(targetCols);
+            var colData = ExtractColsData(targetCols);
 
-            if (origRes is not null) allResults.Add(origRes);
-            if (res is not null) allResults.Add(res);
+            if (colData.OriginalResult is not null) allResults.Add(colData.OriginalResult);
+            if (colData.Result is not null) allResults.Add(colData.Result);
 
-            if (origGua is not null) allGuaranteed.Add(origGua);
-            if (gua is not null) allGuaranteed.Add(gua);
+            if (colData.OriginalGuaranteed is not null) allGuaranteed.Add(colData.OriginalGuaranteed);
+            if (colData.Guaranteed is not null) allGuaranteed.Add(colData.Guaranteed);
 
-            if (dup) isDupFlag = true;
-            if (pos is not null) nextPos = pos;
+            if (colData.IsDuplicate) isDupFlag = true;
+            if (colData.NextPos is not null) nextPos = colData.NextPos;
+            rarity ??= colData.Rarity;
         }
 
         var (resultValue, originalResult, isDuplicate) = FinalizeResults(allResults, isDupFlag);
@@ -122,7 +153,8 @@ public sealed partial class BCParser : IParser
             NextPos: nextPos,
             OriginalResult: originalResult,
             OriginalGuaranteed: originalGuaranteed,
-            IsDuplicateRare: isDuplicate);
+            IsDuplicateRare: isDuplicate,
+            Rarity: rarity);
     }
 
     /// <summary>
@@ -147,8 +179,16 @@ public sealed partial class BCParser : IParser
         }
     }
 
-    private (string? Result, string? Guaranteed, Position? NextPos, string? OriginalResult, bool IsDuplicate, string? OriginalGuaranteed)
-        ExtractColsData(List<IElement> targetCols)
+    private record ColsData(
+        string? Result,
+        string? Guaranteed,
+        Position? NextPos,
+        string? OriginalResult,
+        bool IsDuplicate,
+        string? OriginalGuaranteed,
+        CatRarity? Rarity);
+
+    private ColsData ExtractColsData(List<IElement> targetCols)
     {
         string? resText = null;
         string? guaText = null;
@@ -156,6 +196,7 @@ public sealed partial class BCParser : IParser
         string? origRes = null;
         var isDup = false;
         string? origGua = null;
+        CatRarity? rarity = null;
 
         if (targetCols.Count > 0)
         {
@@ -178,6 +219,8 @@ public sealed partial class BCParser : IParser
             {
                 nextPos = new Position(int.Parse(posMatch.Groups[1].Value), posMatch.Groups[2].Value);
             }
+
+            rarity = ParseRarityFromClass(targetCols[0]);
         }
 
         if (targetCols.Count > 1)
@@ -200,9 +243,10 @@ public sealed partial class BCParser : IParser
             {
                 nextPos = new Position(int.Parse(posMatch.Groups[1].Value), posMatch.Groups[2].Value);
             }
+
         }
 
-        return (resText, guaText, nextPos, origRes, isDup, origGua);
+        return new ColsData(resText, guaText, nextPos, origRes, isDup, origGua, rarity);
     }
 
     private static List<string> FilterCatNames(List<IElement> aTags)
@@ -217,6 +261,26 @@ public sealed partial class BCParser : IParser
             names.Add(text);
         }
         return names;
+    }
+
+    /// <summary>
+    /// 從 td 的 CSS class 解析貓咪稀有度。
+    /// HTML 格式：class="cat pick {rarity}" 或 class="cat pick {rarity} next_position"
+    /// </summary>
+    private static CatRarity? ParseRarityFromClass(IElement td)
+    {
+        var classList = td.ClassList;
+        if (!classList.Contains("cat")) return null;
+
+        if (classList.Contains("legend")) return CatRarity.Legend;
+        if (classList.Contains("exclusive")) return CatRarity.Exclusive;
+        if (classList.Contains("uber_fest")) return CatRarity.UberRareFest;
+        if (classList.Contains("uber")) return CatRarity.UberRare;
+        if (classList.Contains("supa_fest")) return CatRarity.SuperRareFest;
+        if (classList.Contains("supa")) return CatRarity.SuperRare;
+        if (classList.Contains("rare")) return CatRarity.Rare;
+
+        return null;
     }
 
     private static (SlotValue Value, string? Original, bool IsDuplicate) FinalizeResults(
@@ -259,4 +323,47 @@ public sealed partial class BCParser : IParser
 
     private static string TruncateHtml(string html, int maxLength = 500) =>
         html.Length <= maxLength ? html : html[..maxLength] + "...";
+
+    public IReadOnlyList<EventInfo> ParseEventList(string html)
+    {
+        var parser = new HtmlParser();
+        var document = parser.ParseDocument(html);
+
+        var select = document.QuerySelector("#event_select")
+            ?? throw new ParseException("Cannot parse event list: #event_select not found");
+
+        var events = new List<EventInfo>();
+        var currentGroup = "Unknown";
+
+        foreach (var child in select.Children)
+        {
+            if (child.TagName.Equals("OPTGROUP", StringComparison.OrdinalIgnoreCase))
+            {
+                // optgroup label 格式："Upcoming:"、"Custom:"、"Past:"
+                currentGroup = (child.GetAttribute("label") ?? "Unknown").TrimEnd(':');
+
+                foreach (var option in child.QuerySelectorAll("option"))
+                {
+                    var value = option.GetAttribute("value")?.Trim();
+                    var label = option.TextContent.Trim();
+                    if (!string.IsNullOrEmpty(value) && !string.IsNullOrEmpty(label))
+                    {
+                        events.Add(new EventInfo(value, label, currentGroup));
+                    }
+                }
+            }
+            else if (child.TagName.Equals("OPTION", StringComparison.OrdinalIgnoreCase))
+            {
+                // 不在 optgroup 內的散落 option
+                var value = child.GetAttribute("value")?.Trim();
+                var label = child.TextContent.Trim();
+                if (!string.IsNullOrEmpty(value) && !string.IsNullOrEmpty(label))
+                {
+                    events.Add(new EventInfo(value, label, currentGroup));
+                }
+            }
+        }
+
+        return events;
+    }
 }

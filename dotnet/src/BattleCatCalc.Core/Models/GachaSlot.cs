@@ -1,3 +1,5 @@
+using BattleCatCalc.Core.Enums;
+
 namespace BattleCatCalc.Core.Models;
 
 /// <summary>
@@ -10,6 +12,8 @@ namespace BattleCatCalc.Core.Models;
 /// <param name="OriginalResult">Pre-substitution result text (for event-specific display).</param>
 /// <param name="OriginalGuaranteed">Pre-substitution guaranteed text.</param>
 /// <param name="IsDuplicateRare">Whether this slot triggers a track switch due to consecutive rare duplicates.</param>
+/// <param name="Rarity">Rarity of the single-roll cat, parsed from HTML CSS class.</param>
+/// <param name="GuaranteedRarity">Rarity of the guaranteed cat from the HTML cat catalog, or null if unknown.</param>
 public record class GachaSlot(
     Position Id,
     SlotValue Result,
@@ -17,4 +21,6 @@ public record class GachaSlot(
     Position? NextPos = null,
     string? OriginalResult = null,
     string? OriginalGuaranteed = null,
-    bool IsDuplicateRare = false);
+    bool IsDuplicateRare = false,
+    CatRarity? Rarity = null,
+    CatRarity? GuaranteedRarity = null);

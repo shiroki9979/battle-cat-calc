@@ -1,3 +1,4 @@
+using BattleCatCalc.Core.Enums;
 using BattleCatCalc.Core.Models;
 using BattleCatCalc.Infrastructure.Parsing;
 
@@ -102,5 +103,47 @@ public class BCParserSnapshotTests
 
         Assert.NotNull(slot);
         Assert.True(slot!.IsDuplicateRare);
+    }
+
+    [Fact]
+    public void TrackA_FirstSlot_RarityIsRare()
+    {
+        /// 動機：貓咪陰陽師是 rare 貓，驗證稀有度解析。
+        /// 方法：取 Track A[0]。
+        /// 驗證：Rarity=Rare。
+        var slot = TrackA[0];
+        Assert.Equal(CatRarity.Rare, slot.Rarity);
+    }
+
+    [Fact]
+    public void TrackA_UberSlot_RarityIsUber()
+    {
+        /// 動機：驗證含 uber 稀有度的格子。
+        /// 方法：找出第一個 Rarity=UberRare 的格子。
+        /// 驗證：至少存在一個 Uber 格。
+        var uberSlot = TrackA.FirstOrDefault(s => s.Rarity == CatRarity.UberRare);
+        Assert.NotNull(uberSlot);
+    }
+
+    [Fact]
+    public void TrackA_FirstSlot_GuaranteedRarityParsed()
+    {
+        /// 動機：保底貓（第10使徒）的稀有度應為 uber。
+        /// 方法：取 Track A[0]。
+        /// 驗證：find_select 的 Uber 分類應優先於保底格的 rare 配色。
+        var slot = TrackA[0];
+        Assert.Equal(CatRarity.UberRare, slot.GuaranteedRarity);
+    }
+
+    [Theory]
+    [InlineData(CatRarity.Rare)]
+    [InlineData(CatRarity.SuperRare)]
+    [InlineData(CatRarity.UberRare)]
+    public void TrackA_ContainsExpectedRarities(CatRarity rarity)
+    {
+        /// 動機：event 1019 fixture 應包含 rare、supa、uber。
+        /// 方法：檢查所有格子的 Rarity。
+        /// 驗證：至少有一格對應到該稀有度。
+        Assert.Contains(TrackA, s => s.Rarity == rarity);
     }
 }

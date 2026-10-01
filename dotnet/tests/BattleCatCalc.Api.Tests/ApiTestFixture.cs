@@ -18,6 +18,26 @@ internal sealed class StubFetcher : IFetcher
         return Task.FromResult(StubHtml);
     }
 
+    public Task<string> FetchHomePageHtmlAsync(
+        string lang = "en", CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult(StubHomePageHtml);
+    }
+
+    public const string StubHomePageHtml = """
+        <html><body>
+        <select id="event_select">
+          <optgroup label="Upcoming:">
+            <option value="2026-03-30_943">2026-03-30 ~ 2026-04-01: Test Event A</option>
+            <option value="2026-04-01_944">2026-04-01 ~ 2026-04-03: Test Event B</option>
+          </optgroup>
+          <optgroup label="Past:">
+            <option value="2025-01-01_100">2025-01-01 ~ 2025-01-03: Old Event</option>
+          </optgroup>
+        </select>
+        </body></html>
+        """;
+
     /// <summary>
     /// 產生一個 2-row 的最小 HTML，足以通過 BCParser 解析。
     /// 包含 Track A/B 各兩個 slot，第二個 slot 有保底欄位。
@@ -59,6 +79,15 @@ internal sealed class StubFetcher : IFetcher
 /// </summary>
 internal sealed class StubParser : IParser
 {
+    public IReadOnlyList<EventInfo> ParseEventList(string html)
+    {
+        return [
+            new EventInfo("2026-03-30_943", "2026-03-30 ~ 2026-04-01: Test Event A", "Upcoming"),
+            new EventInfo("2026-04-01_944", "2026-04-01 ~ 2026-04-03: Test Event B", "Upcoming"),
+            new EventInfo("2025-01-01_100", "2025-01-01 ~ 2025-01-03: Old Event", "Past"),
+        ];
+    }
+
     public (Track TrackA, Track TrackB) Parse(string html)
     {
         var trackA = new Track("A", [

@@ -9,3 +9,7 @@ dotnet/**/obj/
 dotnet/**/artifacts/
 dotnet/**/logs/
 dotnet/**/TestResults/
+dotnet/client/node_modules/
+dotnet/client/dist/
+dotnet/client/playwright-report/
+dotnet/client/test-results/

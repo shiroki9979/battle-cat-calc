@@ -247,7 +247,7 @@ class GachaSlot:
     id: Position                              # 位置
     result: Union[str, ParseStatus]           # 單抽結果
     guaranteed: Union[str, ParseStatus]       # 保底結果
-    next_pos: Optional[Position] = None       # 保底後的跳轉位置
+    next_pos: Optional[Union[Position, ParseStatus]] = None       # 保底後的跳轉位置
     original_result: Optional[str] = None     # 替換前的原始結果
     original_guaranteed: Optional[str] = None # 替換前的原始保底
     is_duplicate_rare: bool = False           # 是否為重複稀有格
@@ -319,14 +319,16 @@ class GachaResult:
 
 ### Track
 
-繼承自 `UserList`，包含一系列 `GachaSlot` 的容器。
+繼承自 `UserList`，包含一系列 `GachaSlot` 的專業容器。
+內部會自動建立 `id -> slot` 索引，將查找時間複雜度降為 O(1)。
 
 ```python
 class Track(UserList):
-    name: str  # 軌道名稱 ('A' 或 'B')
+    def __init__(self, name: str, slots: List[GachaSlot] = None):
+        """初始化軌道，並建立 O(1) 索引"""
     
-    def get_slot(index: int) -> Optional[GachaSlot]
-        """取得指定 ID 的格子 (1-based)"""
+    def get_slot(self, index: int) -> Optional[GachaSlot]
+        """取得指定 ID 的格子 (1-based)，時間複雜度為 O(1)"""
 ```
 
 ---

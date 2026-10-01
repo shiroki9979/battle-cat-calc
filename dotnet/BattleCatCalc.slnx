@@ -4,6 +4,7 @@
     <Project Path="src/BattleCatCalc.Application/BattleCatCalc.Application.csproj" />
     <Project Path="src/BattleCatCalc.Core/BattleCatCalc.Core.csproj" />
     <Project Path="src/BattleCatCalc.Infrastructure/BattleCatCalc.Infrastructure.csproj" />
+    <Project Path="client/BattleCatCalc.Client.esproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/BattleCatCalc.Api.Tests/BattleCatCalc.Api.Tests.csproj" />
