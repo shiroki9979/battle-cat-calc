@@ -12,6 +12,15 @@ class ParseStatus(Enum):
     def __str__(self):
         return self.value
 
+
+class CatRarity(Enum):
+    """貓咪稀有度，取自 godfat 頁面的貓咪目錄（#find_select）。"""
+    RARE = "Rare"
+    SUPER_RARE = "SuperRare"
+    UBER_RARE = "UberRare"
+    LEGEND = "Legend"
+
+
 @dataclass
 class Position:
     """代表一個轉蛋軌道的位置。"""
@@ -34,6 +43,10 @@ class GachaSlot:
     single_next_pos: Optional[Position] = None
     # 重複稀有「沒被觸發」時（上一隻不是同一隻貓）的必中落點，對應 original_guaranteed。
     original_next_pos: Optional[Position] = None
+    # 稀有度取自頁面的貓咪目錄，不是儲存格的 CSS class：後者是 godfat 依慶典費率上色的
+    # 「稀有度帶」，與貓本身的稀有度會不一致。遊戲只對稀有 (RARE) 做連續重複判定。
+    rarity: Optional[CatRarity] = None
+    guaranteed_rarity: Optional[CatRarity] = None
 
 class Track(UserList):
     """包含一系列 GachaSlots 的專業容器。

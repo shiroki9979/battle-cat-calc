@@ -4,6 +4,11 @@
     <ProjectReference Include="..\BattleCatCalc.Core\BattleCatCalc.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="BattleCatCalc.Application.Tests" />
+    <InternalsVisibleTo Include="BattleCatCalc.Infrastructure.Tests" />
+  </ItemGroup>
+
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>

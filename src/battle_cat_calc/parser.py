@@ -1,7 +1,7 @@
 import re
 from bs4 import BeautifulSoup, Tag
 from typing import Dict, List, NamedTuple, Optional, Sequence, Set, Tuple, Union
-from .models import GachaSlot, Position, ParseStatus, Track
+from .models import CatRarity, GachaSlot, Position, ParseStatus, Track
 
 
 class _ColsData(NamedTuple):
@@ -46,8 +46,36 @@ class BCParser:
             # perhaps the partially parsed tracks depending on requirements.
             # For now, let's keep it simple as per the plan.
             raise ValueError("Invalid track")
-        
+
+        rarities = self._read_cat_rarities(soup)
+        for track in (track_a, track_b):
+            for slot in track:
+                slot.rarity = rarities.get(slot.result) if isinstance(slot.result, str) else None
+                slot.guaranteed_rarity = rarities.get(slot.guaranteed) if isinstance(slot.guaranteed, str) else None
+
         return (track_a, track_b)
+
+    def _read_cat_rarities(self, soup: BeautifulSoup) -> Dict[str, CatRarity]:
+        """從頁面的貓咪目錄（#find_select）讀取每隻貓的稀有度。
+
+        表格儲存格的 CSS class（rare / supa_fest ...）是 godfat 依慶典費率上色的「稀有度帶」，
+        與貓本身的稀有度不一致（例如拳擊手貓是 Rare，class 卻是 supa_fest），
+        遊戲規則的判定必須用目錄。
+        """
+        labels = {
+            "Rare": CatRarity.RARE,
+            "Super": CatRarity.SUPER_RARE,
+            "Uber": CatRarity.UBER_RARE,
+            "Legendary": CatRarity.LEGEND,
+        }
+        rarities: Dict[str, CatRarity] = {}
+        for group in soup.select("#find_select optgroup"):
+            rarity = labels.get(group.get("label", "").strip().rstrip(":"))
+            if rarity is None:
+                continue
+            for option in group.select("option"):
+                rarities[option.get_text(strip=True)] = rarity
+        return rarities
 
     def _parse_track_a(self, rows: List) -> Track:
         """掃描並解析 Track A 上的所有格子。"""

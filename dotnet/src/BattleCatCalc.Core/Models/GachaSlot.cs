@@ -15,7 +15,11 @@ namespace BattleCatCalc.Core.Models;
 /// <param name="OriginalResult">Pre-substitution result text (for event-specific display).</param>
 /// <param name="OriginalGuaranteed">Pre-substitution guaranteed text.</param>
 /// <param name="IsDuplicateRare">Whether this slot is a duplicate rare slot (the table assumes the previous cat is the same cat).</param>
-/// <param name="Rarity">Rarity of the single-roll cat, parsed from HTML CSS class.</param>
+/// <param name="Rarity">
+/// Colour band of the single-roll cell, parsed from the HTML CSS class (rare / supa_fest / uber ...).
+/// bc.godfat.org colours cells by the rarity the roll would have under festival rates, so this can differ
+/// from the cat's own rarity (e.g. Boxer Cat is Rare but its cell is supa_fest). Display only.
+/// </param>
 /// <param name="GuaranteedRarity">Rarity of the guaranteed cat from the HTML cat catalog, or null if unknown.</param>
 /// <param name="SingleNextPos">
 /// Where a single roll lands when the duplicate rare rule is triggered (the result column's arrow).
@@ -24,6 +28,10 @@ namespace BattleCatCalc.Core.Models;
 /// </param>
 /// <param name="OriginalNextPos">
 /// Guaranteed-roll landing when the duplicate rare rule is NOT triggered; pairs with <paramref name="OriginalGuaranteed"/>.
+/// </param>
+/// <param name="ResultRarity">
+/// Rarity of the single-roll cat from the HTML cat catalog (<c>#find_select</c>), or null if unknown.
+/// This is the cat's own rarity; the game applies the consecutive-duplicate rule to Rare cats only.
 /// </param>
 public record class GachaSlot(
     Position Id,
@@ -36,4 +44,5 @@ public record class GachaSlot(
     CatRarity? Rarity = null,
     CatRarity? GuaranteedRarity = null,
     Position? SingleNextPos = null,
-    Position? OriginalNextPos = null);
+    Position? OriginalNextPos = null,
+    CatRarity? ResultRarity = null);

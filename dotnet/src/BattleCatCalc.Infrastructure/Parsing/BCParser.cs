@@ -74,7 +74,9 @@ public sealed partial class BCParser : IParser
     private static Track ApplyCatRarities(Track track, IReadOnlyDictionary<string, CatRarity> rarities) =>
         new(track.Name, track.Select(slot => slot with
         {
-            // Guaranteed cells inherit roll colors; the cat catalog identifies the cat's rarity.
+            // Cell colours follow festival-rate bands, not the cat itself; the catalog identifies the cat's rarity,
+            // and game-rule checks (consecutive duplicate rares) must use it.
+            ResultRarity = rarities.TryGetValue(slot.Result.ToString(), out var resultRarity) ? resultRarity : null,
             GuaranteedRarity = rarities.TryGetValue(slot.Guaranteed.ToString(), out var rarity) ? rarity : null
         }));
 

@@ -302,3 +302,117 @@ def test_simulator_empty_target():
     assert result is not None
     assert result.total_cost == 0
 
+
+
+# ── 設計審查後的修正：啟發式下界、未標記的連續稀有、整數成本 ──────────────
+
+from battle_cat_calc.models import CatRarity
+
+
+def _landing_tracks(count: int = 40):
+    """無重複稀有的雙軌：必中 A_n → B_(n+10)、B_n → A_(n+11)（與 fixture 相同）。"""
+    def build(track):
+        other = 'B' if track == 'A' else 'A'
+        step = 10 if track == 'A' else 11
+        return Track(track, [
+            GachaSlot(id=Position(i, track), result=f"c{i}{track}", guaranteed=f"g{i}{track}",
+                      next_pos=Position(i + step, other))
+            for i in range(1, count + 1)
+        ])
+    return build('A'), build('B')
+
+
+class TestHeuristicLowerBounds:
+
+    def test_per_advance_bound_uses_largest_guaranteed_advance(self):
+        """必中從 B 軌出發前進 11 格、成本 10，每格最低成本必須 ≤ 10/11，寫死 1.0 會高估。"""
+        sim = GachaSimulator(*_landing_tracks())
+        assert sim._min_cost_per_advance == pytest.approx(10 / 11)
+
+    def test_per_cat_bound_counts_eleven_cats_per_guaranteed(self):
+        """一次必中以 guaranteed_cost 拿 11 隻，每隻最低成本是 guaranteed_cost / 11。"""
+        a, b = _landing_tracks()
+        assert GachaSimulator(a, b)._min_cost_per_cat == pytest.approx(10 / 11)
+        cheap = GachaSimulator([GachaPool("p", "p", a, b, True, guaranteed_cost=3)])
+        assert cheap._min_cost_per_cat == pytest.approx(3 / 11)
+
+    def test_astar_matches_exact_search_on_eleven_step_landings(self, monkeypatch):
+        """A* 與關閉啟發式的精確搜尋必須得到相同成本（可容許性的回歸測試）。
+
+        從 B 軌起點、目標落在連續必中的落點上，是舊係數會高估最多的情境。
+        """
+        sim = GachaSimulator(*_landing_tracks(70))
+        exact = GachaSimulator(*_landing_tracks(70))
+        monkeypatch.setattr(exact, "_heuristic", lambda *_: 0.0)
+        for start in (1, 2, 5):
+            for target_pos in (12, 23, 33, 44, 54):
+                for track in ('A', 'B'):
+                    target = {f"c{target_pos}{track}"}
+                    a = sim.find_best_path(Position(start, 'B'), target, 80)
+                    e = exact.find_best_path(Position(start, 'B'), target, 80)
+                    assert (a and a.total_cost) == (e and e.total_cost), (start, target)
+
+
+class TestUnmarkedConsecutiveRare:
+    """表格只標「同軌連續走來」的重複稀有；走到沒標的格子而上一隻就是同一隻稀有貓時，
+    遊戲會重抽但表格沒有替換結果，模擬器必須拒走而不是假裝沒事。"""
+
+    @staticmethod
+    def _track(second_rarity, second_dup=False, first_rarity=CatRarity.RARE):
+        """1A Archer、2A Archer（或已標記的替換格）、3A T；3B 也有 T。"""
+        second = GachaSlot(id=Position(2, 'A'), result="Archer", guaranteed="G2", next_pos=Position(12, 'B'),
+                           rarity=second_rarity)
+        if second_dup:
+            second = GachaSlot(id=Position(2, 'A'), result="Replaced", guaranteed="G2", next_pos=Position(12, 'B'),
+                               original_result="Archer", is_duplicate_rare=True,
+                               single_next_pos=Position(3, 'B'), rarity=second_rarity)
+        track_a = Track("A", [
+            GachaSlot(id=Position(1, 'A'), result="Archer", guaranteed="G1", next_pos=Position(11, 'B'),
+                      rarity=first_rarity),
+            second,
+            GachaSlot(id=Position(3, 'A'), result="T", guaranteed="G3", next_pos=Position(13, 'B')),
+        ])
+        track_b = Track("B", [GachaSlot(id=Position(3, 'B'), result="T", guaranteed="G3B")])
+        return GachaSimulator(track_a, track_b)
+
+    def test_unmarked_repeat_of_rare_is_refused(self):
+        """1A Archer（稀有）→ 2A 也是 Archer 但沒標重複：唯一的路被拒，找不到 T。"""
+        assert self._track(CatRarity.RARE).find_best_path(Position(1, 'A'), {"T"}, 5) is None
+
+    def test_repeat_of_non_rare_is_allowed(self):
+        """只有稀有才有連續重複判定；超激連續相同照常前進。"""
+        sim = self._track(CatRarity.UBER_RARE)
+        sim2 = GachaSimulator(
+            Track("A", [GachaSlot(id=Position(i, 'A'), result="Uber", guaranteed="G", rarity=CatRarity.UBER_RARE)
+                        for i in (1, 2)] + [GachaSlot(id=Position(3, 'A'), result="T", guaranteed="G")]),
+            Track("B", []))
+        result = sim2.find_best_path(Position(1, 'A'), {"T"}, 5)
+        assert result is not None and result.total_cost == 3
+
+    def test_marked_duplicate_still_triggers_and_jumps(self):
+        """同樣的連續 Archer，表格有標替換與落點時照規則走：拿 Replaced 並落到 3B。"""
+        result = self._track(CatRarity.RARE, second_dup=True).find_best_path(Position(1, 'A'), {"T"}, 5)
+        assert result is not None
+        assert [s.unit for s in result.path] == ["Archer", "Replaced", "T"]
+        assert result.path[1].is_duplicate_rare and result.path[1].target == Position(3, 'B')
+
+    def test_rare_without_catalog_is_still_remembered_when_replaced_somewhere(self):
+        """沒有稀有度目錄的資料（例如手工測試）退而記住曾被替換掉的貓，重複稀有格仍會觸發。"""
+        result = self._track(None, second_dup=True, first_rarity=None).find_best_path(Position(1, 'A'), {"T"}, 5)
+        assert result is not None and result.path[1].is_duplicate_rare
+
+
+class TestReportedCost:
+
+    def test_total_cost_is_integer_even_with_prefer_guaranteed(self):
+        """prefer_guaranteed 的 1.11 加權只用於排序；回報的 total_cost 是實際抽數（1 單抽 + 1 必中 = 11）。"""
+        # 2A 的必中是目標；最佳路徑 = 單抽 1A + 在 2A 必中
+        slots = [GachaSlot(id=Position(i, 'A'), result=f"c{i}", guaranteed=f"G{i}", next_pos=Position(i + 10, 'B'))
+                 for i in range(1, 15)]
+        slots[1].guaranteed = "Target"
+        track_a = Track("A", slots)
+        sim = GachaSimulator(track_a, Track("B", []))
+        result = sim.find_best_path(Position(1, 'A'), {"Target"}, 20, prefer_guaranteed=True)
+        assert result is not None
+        assert isinstance(result.total_cost, int)
+        assert result.total_cost == 11

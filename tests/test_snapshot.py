@@ -14,7 +14,7 @@ import pytest
 from battle_cat_calc.parser import BCParser
 from battle_cat_calc.simulator import GachaSimulator
 from battle_cat_calc.analyzer import SeedAnalyzer
-from battle_cat_calc.models import Position, GachaPool
+from battle_cat_calc.models import Position, GachaPool, CatRarity
 
 
 FIXTURE_DIR = pathlib.Path(__file__).parent / "fixtures"
@@ -346,6 +346,62 @@ class TestDuplicateRareCrossCheck:
 
         assert mismatches == []
         assert checked >= 150  # 避免因為視窗全被略過而空轉通過
+
+
+# ── 最優性交叉驗證：A* 必須與關閉啟發式的精確搜尋一致 ────────
+
+class TestOptimalityCrossCheck:
+    """啟發式一旦高估，A* 就可能回傳較差的解；用 h=0 的 Dijkstra 當基準做隨機抽查。"""
+
+    @staticmethod
+    def _exact(sim, *args, **kwargs):
+        original = sim._heuristic
+        sim._heuristic = lambda *_: 0.0
+        try:
+            return sim.find_best_path(*args, **kwargs)
+        finally:
+            sim._heuristic = original
+
+    def _check(self, sim, cats, trials, seed):
+        import random
+        rng = random.Random(seed)
+        cats = sorted(cats)
+        for _ in range(trials):
+            targets = set(rng.sample(cats, rng.randint(1, 3)))
+            start = Position(rng.randint(1, 60), rng.choice('AB'))
+            astar = sim.find_best_path(start, targets, 80)
+            exact = self._exact(sim, start, targets, 80)
+            assert (astar and astar.total_cost) == (exact and exact.total_cost), (start, targets)
+
+    def test_single_pool(self, parsed):
+        self._check(GachaSimulator(parsed.track_a, parsed.track_b), parsed.get_all_cats(), trials=40, seed=11)
+
+    def test_multi_pool(self, multi_pool_sim, parsed, parsed_1020):
+        self._check(multi_pool_sim, parsed.get_all_cats() | parsed_1020.get_all_cats(), trials=30, seed=12)
+
+
+# ── 稀有度：取自頁面目錄，不是儲存格的 CSS class ──────────────
+
+class TestRarityFromCatalog:
+    """HTML 目錄（#find_select）：Rare 29 隻、Super 20、Uber 7、Legendary 1。
+    儲存格 class 是 godfat 依慶典費率上色的「稀有度帶」：拳擊手貓的 class 是 supa_fest、
+    貓咪番長是 uber_fest，目錄卻分別是 Rare、Super。遊戲的連續重複判定要看目錄。"""
+
+    def test_result_rarity_follows_catalog_not_css_class(self, parsed):
+        assert parsed.track_b.get_slot(9).result == "拳擊手貓"
+        assert parsed.track_b.get_slot(9).rarity is CatRarity.RARE          # class: supa_fest
+        assert parsed.track_a.get_slot(13).result == "貓咪番長"
+        assert parsed.track_a.get_slot(13).rarity is CatRarity.SUPER_RARE   # class: uber_fest
+        assert parsed.track_a.get_slot(1).rarity is CatRarity.RARE          # 貓咪陰陽師
+        assert parsed.track_a.get_slot(18).rarity is CatRarity.UBER_RARE    # EVA零號機
+
+    def test_guaranteed_rarity_from_catalog(self, parsed):
+        assert parsed.track_a.get_slot(1).guaranteed == "第10使徒"
+        assert parsed.track_a.get_slot(1).guaranteed_rarity is CatRarity.UBER_RARE
+
+    def test_duplicate_rare_slots_are_rare(self, parsed):
+        for slot in (parsed.track_b.get_slot(10), parsed.track_a.get_slot(100)):
+            assert slot.is_duplicate_rare and slot.rarity is CatRarity.RARE
 
 
 # ── Analyzer 快照驗證 ──────────────────────────────────────
