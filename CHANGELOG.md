@@ -25,6 +25,14 @@ Last updated: 2026-10-02
   - 影響範例：`test_start_from_track_b` 的最佳成本由 24 變為 20（路徑經過 `B10 → 12A`）。
 - **測試**：移除把誤解析當標準答案的斷言（`A11` 原始貓、`B10.next_pos == 21B`），改為取自 HTML 原文的期望值，
   並新增以兩種獨立 HTML 箭頭互相驗證的交叉測試（`TestDuplicateRareCrossCheck`）。
+- **.NET 版同步上述修正**（`dotnet/src`、`dotnet/tests`、`dotnet/client`）：
+  - `BCParser` 以內部 `CellGrid` 還原 `rowspan` 網格；`GachaSlot` 新增 `SingleNextPos`、`OriginalNextPos`，
+    結果欄與必中欄的箭頭分開存放。
+  - `GachaSimulator` 新增 `ResolveSingleRoll`：單抽依上一隻貓決定是否觸發重複稀有；必中十連的前 10 抽逐抽走；
+    起始格是未觸發的重複稀有格時用替換前的必中；`IsTrackSwitch` 依落點判斷；`_minCostPerAdvance` 納入重複稀有的前進格數。
+  - 測試比照 Python 版：期望值取自 HTML，新增重複稀有的快照測試、交叉驗證（`DuplicateRareSnapshotTests`）、
+    手工資料的邊界測試（`GachaSimulatorDuplicateRareTests`）與 `SlotDtoTests`。
+    `StartFromTrackB` 的最佳成本同樣由 24 變為 20，與 Python 版一致。
 - 修正多項 Markdown lint 格式規範，包含 MD032（清單前後空行）、MD040（程式碼區塊指定語言）、MD047（檔案結尾換行）與 MD060（表格分隔列空格）（`docs/api_reference.md`、`docs/design_logic.md`、`.agents/skills/gacha-simulation/SKILL.md`、`README.md`）。
 
 ### Changed
@@ -34,11 +42,9 @@ Last updated: 2026-10-02
   區分 8.5 與 8.6 版的重複稀有替換方式、標示各規則的證據等級，並列出尚未驗證的項目與已知限制。
   外部原頁多被出口代理封鎖，該部分取自搜尋摘要；fixture 實測的部分直接讀 HTML 驗證。
   修正文件原有的錯誤：必中十一連並非必定換軌；B 軌重複稀有前進 2 格（`B10 → 12A`），移除無法驗證的 `102B → 103A` 範例。
-- **.NET 版尚未同步本次修正**（見「Known issues」）。
-
-### Known issues
-
-- `dotnet/` 的 parser 與 simulator 是 Python 版的逐行移植，仍有上述修正前的行為。環境沒有 `dotnet` SDK，無法編譯與執行測試，故未修改。
+- **API 契約**：`GET /api/v1/tracks` 的每個 slot 新增 `singleNextPos`（重複稀有被觸發時單抽的落點，一般格為 `null`）。
+  `nextPos` 現在一律是必中十一連的落點。前端 `TrackSlotRow` 改用 `singleNextPos` 顯示重複稀有的落點徽章，
+  並同步 `e2e/fixtures.ts` 與 `dotnet/docs/architecture.md` 的範例。
 - 將仍適用的開發規則與領域問答流程整理至 `AGENTS.md`、`docs/agents/domain.md`，並將轉蛋模擬與 HTML 解析測試工作流集中至 `.agents/skills/`。
 
 ### Removed
