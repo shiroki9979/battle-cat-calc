@@ -1,4 +1,5 @@
 using BattleCatCalc.Core.Exceptions;
+using BattleCatCalc.Core.Models;
 using BattleCatCalc.Infrastructure.Parsing;
 
 namespace BattleCatCalc.Infrastructure.Tests.Parsing;
@@ -260,6 +261,76 @@ public class BCParserEdgeCaseTests
         Assert.Equal(2, trackA.Count);
         Assert.Equal(1, trackA[0].Id.Id);
         Assert.Equal(2, trackA[1].Id.Id);
+    }
+
+    #endregion
+
+    #region Rowspan 重疊（重複稀有格）
+
+    // 欄位：0=A 編號, 1=A 結果, 2=A 必中, 3=B 結果(Alt.), 4=B 必中(Alt.), 5=B 編號。
+    // 仿照真實表格的重疊結構：B1 是重複稀有格（佔第 0~2 列），A1 起點與 B1 的「替換前」同列，
+    // A1 的稀有度儲存格跨 2 列，因此第 2 列的兩個 <td> 其實是 B1 的替換結果，不是 A1 的。
+    private const string OverlapHtml = """
+        <html><body><table>
+        <tr><td></td><td></td><td></td><td></td><td></td><td id="N1B" rowspan="3">1B</td></tr>
+        <tr><td id="N1A" rowspan="3">1A</td><td rowspan="2"></td><td rowspan="2"></td>
+            <td><a href="/u/o">Orig</a></td><td><a href="/u/og">OrigGua</a> &lt;- 11A</td></tr>
+        <tr><td><a href="/u/r">Repl</a> &lt;- 3A</td><td><a href="/u/rg">ReplGua</a> -&gt; 12B</td></tr>
+        <tr><td><a href="/u/a1">CatA1</a></td><td><a href="/u/ga1">GuaA1</a> -&gt; 11B</td>
+            <td></td><td></td><td id="N2B" rowspan="2">2B</td></tr>
+        <tr><td id="N2A" rowspan="2">2A</td><td></td><td></td>
+            <td><a href="/u/b2">CatB2</a></td><td><a href="/u/gb2">GuaB2</a> -&gt; 13B</td></tr>
+        <tr><td><a href="/u/a2">CatA2</a></td><td><a href="/u/ga2">GuaA2</a> -&gt; 12B</td></tr>
+        </table></body></html>
+        """;
+
+    [Fact]
+    public void Parse_OverlappingRowspan_CoveredCellsNotMisattributed()
+    {
+        /// 動機：A1 的欄位被蓋住的那一列，不應把 B1 的替換結果算成 A1 的。
+        ///      舊版以「這一列的前兩個 <td>」取 A 的欄位，會把 Repl 讀成 A1 的原始貓而誤判為重複稀有。
+        var (trackA, _) = _parser.Parse(OverlapHtml);
+        var slot = trackA.GetSlot(1)!;
+
+        Assert.Equal("CatA1", slot.Result.AsCatName());
+        Assert.Equal("GuaA1", slot.Guaranteed.AsCatName());
+        Assert.False(slot.IsDuplicateRare);
+        Assert.Null(slot.OriginalResult);
+        Assert.Equal(new Position(11, "B"), slot.NextPos);
+        Assert.Null(slot.SingleNextPos);
+    }
+
+    [Fact]
+    public void Parse_OverlappingRowspan_DuplicateSlotKeepsBothArrowsApart()
+    {
+        /// 動機：重複稀有格的結果欄箭頭是單抽落點，必中欄箭頭是必中落點，兩者不可互相覆蓋。
+        var (_, trackB) = _parser.Parse(OverlapHtml);
+        var slot = trackB.GetSlot(1)!;
+
+        Assert.True(slot.IsDuplicateRare);
+        Assert.Equal("Orig", slot.OriginalResult);
+        Assert.Equal("Repl", slot.Result.AsCatName());
+        Assert.Equal("OrigGua", slot.OriginalGuaranteed);
+        Assert.Equal("ReplGua", slot.Guaranteed.AsCatName());
+        Assert.Equal(new Position(3, "A"), slot.SingleNextPos);     // 結果欄 "<- 3A"
+        Assert.Equal(new Position(12, "B"), slot.NextPos);          // 替換後的必中欄 "-> 12B"
+        Assert.Equal(new Position(11, "A"), slot.OriginalNextPos);  // 替換前的必中欄 "<- 11A"
+    }
+
+    [Fact]
+    public void Parse_OverlappingRowspan_SlotsAfterOverlapAreUnaffected()
+    {
+        /// 動機：重疊之後的格子仍正確歸屬。
+        var (trackA, trackB) = _parser.Parse(OverlapHtml);
+        var a2 = trackA.GetSlot(2)!;
+        var b2 = trackB.GetSlot(2)!;
+
+        Assert.Equal(("CatA2", "GuaA2", new Position(12, "B")),
+            (a2.Result.AsCatName(), a2.Guaranteed.AsCatName(), a2.NextPos));
+        Assert.Equal(("CatB2", "GuaB2", new Position(13, "B")),
+            (b2.Result.AsCatName(), b2.Guaranteed.AsCatName(), b2.NextPos));
+        Assert.False(a2.IsDuplicateRare);
+        Assert.False(b2.IsDuplicateRare);
     }
 
     #endregion

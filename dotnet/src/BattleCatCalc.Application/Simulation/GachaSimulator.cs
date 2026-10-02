@@ -12,21 +12,33 @@ public sealed class GachaSimulator : ISimulator
 {
     private readonly Dictionary<string, GachaPool> _pools;
 
+    // 會在某個重複稀有格被替換掉的貓。只有上一抽拿到這些貓，下一格才可能觸發重複，
+    // 所以搜尋狀態只需要記住它們（見 SearchState.LastRolledRare）。
+    private readonly FrozenSet<string> _dupCandidates;
+
+    // 重複稀有時單抽一次最多前進幾格，供啟發式估計使用。
+    private readonly int _maxSingleAdvance;
+
     // 以下欄位在 FindBestPath 呼叫時初始化，僅供搜尋期間使用
     private Dictionary<string, int[]> _targetSortedPositions = [];
     private float _minCostPerAdvance;
+
+    /// <summary>單抽一個格子的結果。</summary>
+    private readonly record struct RollOutcome(string Unit, Position NextPos, bool IsDuplicateRare);
 
     /// <summary>Single-pool constructor (backward-compatible).</summary>
     public GachaSimulator(Track trackA, Track trackB, bool hasGuaranteed = true, int guaranteedCost = 10)
     {
         var pool = new GachaPool("default", "Default Pool", trackA, trackB, hasGuaranteed, guaranteedCost);
         _pools = new() { ["default"] = pool };
+        (_dupCandidates, _maxSingleAdvance) = ScanDuplicateRules(_pools.Values);
     }
 
     /// <summary>Multi-pool constructor.</summary>
     public GachaSimulator(IEnumerable<GachaPool> pools)
     {
         _pools = pools.ToDictionary(p => p.PoolId);
+        (_dupCandidates, _maxSingleAdvance) = ScanDuplicateRules(_pools.Values);
     }
 
     /// <inheritdoc />
@@ -68,13 +80,17 @@ public sealed class GachaSimulator : ISimulator
             throw new ArgumentException(
                 $"Target cats not found in any pool: {string.Join(", ", missing)}");
 
+        // 重複稀有時單抽一次可前進多格（例如 10B → 12A 前進 2 格），每格成本因此更低；
+        // 不計入的話啟發式會高估剩餘成本，破壞 A* 的最優性。
         _minCostPerAdvance = Math.Min(
-            1.0f,
-            _pools.Values
-                .Where(p => p.HasGuaranteed)
-                .Select(p => (float)p.GuaranteedCost / 10)
-                .DefaultIfEmpty(1.0f)
-                .Min());
+            1.0f / _maxSingleAdvance,
+            Math.Min(
+                1.0f,
+                _pools.Values
+                    .Where(p => p.HasGuaranteed)
+                    .Select(p => (float)p.GuaranteedCost / 10)
+                    .DefaultIfEmpty(1.0f)
+                    .Min()));
 
         // 初始狀態
         var initialCollected = FrozenSet<string>.Empty;
@@ -194,6 +210,60 @@ public sealed class GachaSimulator : ISimulator
         return track.GetSlot(posId);
     }
 
+    /// <summary>掃描所有池，整理重複稀有判定需要的資訊。</summary>
+    private static (FrozenSet<string> Candidates, int MaxSingleAdvance) ScanDuplicateRules(IEnumerable<GachaPool> pools)
+    {
+        var candidates = new HashSet<string>();
+        var maxAdvance = 1;
+
+        foreach (var pool in pools)
+        {
+            foreach (var track in new[] { pool.TrackA, pool.TrackB })
+            {
+                foreach (var slot in track)
+                {
+                    if (!slot.IsDuplicateRare || slot.OriginalResult is not string original) continue;
+
+                    candidates.Add(original);
+                    if (slot.SingleNextPos is Position landing)
+                        maxAdvance = Math.Max(maxAdvance, landing.Id - slot.Id.Id);
+                }
+            }
+        }
+
+        return (candidates.ToFrozenSet(), maxAdvance);
+    }
+
+    /// <summary>決定要不要把剛拿到的貓記進狀態（見 SearchState.LastRolledRare）。</summary>
+    private string? Remember(string unit) => _dupCandidates.Contains(unit) ? unit : null;
+
+    /// <summary>
+    /// 計算在 slot 單抽一次會拿到什麼、落在哪。
+    /// 重複稀有格的表格資料是假設「上一隻就是同一隻貓」算出來的：
+    /// 上一隻確實是 OriginalResult 時觸發（拿替換後的貓，落點用網站標示的單抽落點）；
+    /// 否則不觸發（拿替換前的貓，同軌前進一格）。
+    /// </summary>
+    /// <returns>null 代表這格無法可靠模擬（資料無效，或觸發重複卻沒有標示落點）。</returns>
+    private static RollOutcome? ResolveSingleRoll(GachaSlot slot, string? lastCat)
+    {
+        if (!slot.Result.IsValid) return null;
+
+        var result = slot.Result.AsCatName()!;
+        var plainNext = new Position(slot.Id.Id + 1, slot.Id.Track);
+
+        if (!slot.IsDuplicateRare || slot.OriginalResult is not string original)
+            return new RollOutcome(result, plainNext, false);
+
+        if (lastCat == original)
+        {
+            return slot.SingleNextPos is Position landing
+                ? new RollOutcome(result, landing, true)
+                : null;
+        }
+
+        return new RollOutcome(original, plainNext, false);
+    }
+
     /// <summary>
     /// 位置感知的 admissible 啟發式估計。
     /// 取未收集數量與「最遠最近可得位置距離 × 每位置最低成本」的最大值。
@@ -248,18 +318,17 @@ public sealed class GachaSimulator : ISimulator
                 {
                     int posId = slot.Id.Id;
 
-                    var resultName = slot.Result.AsCatName();
-                    if (resultName is not null && catMaxPos.ContainsKey(resultName))
+                    // 重複稀有格沒被觸發時拿的是替換前的貓，所以 Original* 也算可得。
+                    foreach (var name in new[]
                     {
-                        if (posId > catMaxPos[resultName]) catMaxPos[resultName] = posId;
-                        catPosSets[resultName].Add(posId);
-                    }
+                        slot.Result.AsCatName(), slot.Guaranteed.AsCatName(),
+                        slot.OriginalResult, slot.OriginalGuaranteed
+                    })
+                    {
+                        if (name is null || !catMaxPos.ContainsKey(name)) continue;
 
-                    var guaName = slot.Guaranteed.AsCatName();
-                    if (guaName is not null && catMaxPos.ContainsKey(guaName))
-                    {
-                        if (posId > catMaxPos[guaName]) catMaxPos[guaName] = posId;
-                        catPosSets[guaName].Add(posId);
+                        if (posId > catMaxPos[name]) catMaxPos[name] = posId;
+                        catPosSets[name].Add(posId);
                     }
                 }
             }
@@ -289,31 +358,16 @@ public sealed class GachaSimulator : ISimulator
         int targetCount)
     {
         var slot = GetSlot(state.PosId, state.PosTrack, poolId);
-        if (slot is null || !slot.Result.IsValid) return;
+        if (slot is null) return;
 
         float newCost = state.Cost + singleRollCost;
         if (newCost > maxRolls) return;
 
-        string actualUnit = slot.Result.AsCatName()!;
+        if (ResolveSingleRoll(slot, state.LastRolledRare) is not { } outcome) return;
 
-        // 重複稀有判定
-        bool isDupRare = slot.IsDuplicateRare && state.LastRolledRare == slot.OriginalResult;
-
-        Position nextPos;
-        if (isDupRare && slot.NextPos is Position np)
-        {
-            nextPos = np;
-        }
-        else
-        {
-            nextPos = new Position(state.PosId + 1, state.PosTrack);
-            isDupRare = false;
-        }
-
-        // 更新稀有貓追蹤
-        string? newLastRare = (slot.IsDuplicateRare || slot.OriginalResult is not null)
-            ? actualUnit
-            : state.LastRolledRare;
+        string actualUnit = outcome.Unit;
+        Position nextPos = outcome.NextPos;
+        string? newLastRare = Remember(actualUnit);
 
         var step = new GachaStep(
             Source: new Position(state.PosId, state.PosTrack),
@@ -322,7 +376,7 @@ public sealed class GachaSimulator : ISimulator
             PoolId: poolId,
             IsGuaranteed: false,
             IsTrackSwitch: nextPos.Track != state.PosTrack,
-            IsDuplicateRare: isDupRare);
+            IsDuplicateRare: outcome.IsDuplicateRare);
 
         var newCollected = targets.Contains(actualUnit) && !state.Collected.Contains(actualUnit)
             ? new HashSet<string>(state.Collected) { actualUnit }.ToFrozenSet()
@@ -363,26 +417,45 @@ public sealed class GachaSimulator : ISimulator
         if (newCost > maxRolls) return;
 
         var slot = GetSlot(state.PosId, state.PosTrack, poolId);
-        if (slot is null || !slot.Guaranteed.IsValid || slot.NextPos is not Position nextPos) return;
+        if (slot is null) return;
 
         var collectedInRoll = new HashSet<string>();
-        string? lastRareInRoll = state.LastRolledRare;
+        string? lastCat = state.LastRolledRare;
+        var pos = new Position(state.PosId, state.PosTrack);
+        bool startTriggeredDup = false;
 
-        var track = state.PosTrack == "A" ? pool.TrackA : pool.TrackB;
-
-        // 檢查接下來 10 格（不含保底）
+        // 前 10 抽照單抽規則走：遇到重複稀有會換軌並多前進，不能假設一直在同軌的 pos+i。
         for (int i = 0; i < 10; i++)
         {
-            var s = track.GetSlot(state.PosId + i);
-            if (s is null || !s.Result.IsValid) return;
+            var s = GetSlot(pos.Id, pos.Track, poolId);
+            if (s is null) return; // 資料不完整，無法執行保底模擬
+            if (ResolveSingleRoll(s, lastCat) is not { } outcome) return;
 
-            string unit = s.Result.AsCatName()!;
-            if (targets.Contains(unit)) collectedInRoll.Add(unit);
-            if (s.IsDuplicateRare || s.OriginalResult is not null) lastRareInRoll = unit;
+            if (i == 0) startTriggeredDup = outcome.IsDuplicateRare;
+            if (targets.Contains(outcome.Unit)) collectedInRoll.Add(outcome.Unit);
+            lastCat = outcome.Unit;
+            pos = outcome.NextPos;
         }
 
-        // 保底貓（保底是超激，不影響重複稀有判定）
-        string guaUnit = slot.Guaranteed.AsCatName()!;
+        // 表格的必中欄是以起始格自己的重複狀態算出來的：
+        // 起始格是重複稀有格但沒被觸發時，要用替換前的版本。
+        string? guaUnit;
+        Position? landing;
+        if (slot.IsDuplicateRare && !startTriggeredDup
+            && slot.OriginalGuaranteed is not null && slot.OriginalNextPos is not null)
+        {
+            guaUnit = slot.OriginalGuaranteed;
+            landing = slot.OriginalNextPos;
+        }
+        else
+        {
+            guaUnit = slot.Guaranteed.AsCatName();
+            landing = slot.NextPos;
+        }
+        if (guaUnit is null || landing is not Position nextPos) return;
+
+        // 第 11 隻是必中超激，它成為「上一隻」，因此重複判定在這之後重置。
+        // 此為依規則推得的假設，尚無資料可獨立驗證。
         if (targets.Contains(guaUnit)) collectedInRoll.Add(guaUnit);
 
         FrozenSet<string> newCollected;
@@ -403,7 +476,8 @@ public sealed class GachaSimulator : ISimulator
             Unit: guaUnit,
             PoolId: poolId,
             IsGuaranteed: true,
-            IsTrackSwitch: true,
+            // 前 10 抽內發生奇數次重複稀有時，必中後會留在原軌道（例如 1B → 12B）。
+            IsTrackSwitch: nextPos.Track != state.PosTrack,
             IsDuplicateRare: false);
 
         int newId = ++idCounter;
@@ -418,7 +492,7 @@ public sealed class GachaSimulator : ISimulator
             StateId: newId,
             ParentId: state.StateId,
             LastStep: step,
-            LastRolledRare: lastRareInRoll);
+            LastRolledRare: Remember(guaUnit));
 
         stateMap[newId] = newState;
         pq.Enqueue(newState, newState.Priority);

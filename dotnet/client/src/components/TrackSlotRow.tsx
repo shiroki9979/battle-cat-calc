@@ -12,7 +12,8 @@ interface TrackSlotRowProps {
 }
 
 export function TrackSlotRow({ slot, isHighlighted, pathStep, onSelect }: TrackSlotRowProps) {
-  const guaranteedPosition = slot.isDuplicateRare ? null : slot.nextPos;
+  // nextPos 一律是必中十一連的落點（重複稀有格為替換後的版本），單抽落點在 singleNextPos
+  const guaranteedPosition = slot.nextPos;
   const showGuaranteed = !!slot.guaranteed && (guaranteedPosition !== null || slot.guaranteed !== slot.result);
 
   const selectName = (event: MouseEvent<HTMLButtonElement>, name: string) => {
@@ -63,8 +64,8 @@ export function TrackSlotRow({ slot, isHighlighted, pathStep, onSelect }: TrackS
       <span className="py-1.5">
         {slot.isDuplicateRare && (
           <Badge variant="destructive" className="text-[10px]">
-            {slot.nextPos
-              ? `→ ${slot.nextPos.id}${slot.nextPos.track}`
+            {slot.singleNextPos
+              ? `→ ${slot.singleNextPos.id}${slot.singleNextPos.track}`
               : 'Dup'}
           </Badge>
         )}

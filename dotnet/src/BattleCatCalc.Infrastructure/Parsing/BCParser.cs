@@ -36,8 +36,12 @@ public sealed partial class BCParser : IParser
 
         var rows = table.QuerySelectorAll("tr").ToList();
 
-        var trackA = ParseTrack(rows, "A");
-        var trackB = ParseTrack(rows, "B");
+        // 重複稀有格會讓相鄰儲存格以 rowspan 互相重疊，同一列的第 N 個 <td> 不一定是第 N 欄，
+        // 必須先還原網格才能正確歸屬儲存格。
+        var grid = CellGrid.Build(rows);
+
+        var trackA = ParseTrack(rows, grid, "A");
+        var trackB = ParseTrack(rows, grid, "B");
 
         ValidateTrack(trackA);
         ValidateTrack(trackB);
@@ -74,7 +78,7 @@ public sealed partial class BCParser : IParser
             GuaranteedRarity = rarities.TryGetValue(slot.Guaranteed.ToString(), out var rarity) ? rarity : null
         }));
 
-    private Track ParseTrack(List<IElement> rows, string trackId)
+    private Track ParseTrack(List<IElement> rows, CellGrid grid, string trackId)
     {
         var pattern = trackId == "A" ? TrackAPattern() : TrackBPattern();
         var slots = new List<GachaSlot>();
@@ -96,7 +100,7 @@ public sealed partial class BCParser : IParser
 
             if (match.Success)
             {
-                var slot = ParseSlot(rows, rowIndex, idTd, trackId);
+                var slot = ParseSlot(grid, rowIndex, idTd, trackId);
                 slots.Add(slot);
 
                 var rowspan = int.TryParse(idTd.GetAttribute("rowspan"), out var rs) ? rs : 1;
@@ -111,26 +115,31 @@ public sealed partial class BCParser : IParser
         return new Track(trackId, slots);
     }
 
-    private GachaSlot ParseSlot(List<IElement> allRows, int startIdx, IElement idTd, string track)
+    private GachaSlot ParseSlot(CellGrid grid, int startIdx, IElement idTd, string track)
     {
         var pattern = track == "A" ? TrackAPattern() : TrackBPattern();
         var match = pattern.Match(idTd.GetAttribute("id") ?? "");
         var slotId = int.Parse(match.Groups[1].Value);
-        var rowspan = int.TryParse(idTd.GetAttribute("rowspan"), out var rs) ? rs : 1;
+        var rowspan = CellGrid.ParseSpan(idTd.GetAttribute("rowspan"));
+
+        // A 軌的結果/必中欄緊接在 id 右側；B 軌（Alt. 欄）則在 id 左側。
+        var idCol = grid.ColumnOf(idTd);
+        var (resultCol, guaranteedCol) = track == "A"
+            ? (idCol + 1, idCol + 2)
+            : (idCol - 2, idCol - 1);
 
         var allResults = new List<string>();
         var allGuaranteed = new List<string>();
         var isDupFlag = false;
-        Position? nextPos = null;
+        Position? resultPos = null;
+        // 依列順序：重複稀有格的第一個是替換前、最後一個是替換後
+        var guaranteedArrows = new List<Position>();
         CatRarity? rarity = null;
 
         for (var i = 0; i < rowspan; i++)
         {
-            var currentRow = allRows[startIdx + i];
-            var currentTds = currentRow.QuerySelectorAll("td").ToList();
-            var targetCols = GetTargetCols(currentTds, track, isFirstRow: i == 0);
-
-            var colData = ExtractColsData(targetCols);
+            var rowIdx = startIdx + i;
+            var colData = ExtractColsData(grid.CellAt(rowIdx, resultCol), grid.CellAt(rowIdx, guaranteedCol));
 
             if (colData.OriginalResult is not null) allResults.Add(colData.OriginalResult);
             if (colData.Result is not null) allResults.Add(colData.Result);
@@ -139,7 +148,8 @@ public sealed partial class BCParser : IParser
             if (colData.Guaranteed is not null) allGuaranteed.Add(colData.Guaranteed);
 
             if (colData.IsDuplicate) isDupFlag = true;
-            if (colData.NextPos is not null) nextPos = colData.NextPos;
+            if (colData.ResultPos is not null) resultPos = colData.ResultPos;
+            if (colData.GuaranteedPos is Position gp) guaranteedArrows.Add(gp);
             rarity ??= colData.Rarity;
         }
 
@@ -150,58 +160,45 @@ public sealed partial class BCParser : IParser
             Id: new Position(slotId, track),
             Result: resultValue,
             Guaranteed: guaranteedValue,
-            NextPos: nextPos,
+            NextPos: guaranteedArrows.Count > 0 ? guaranteedArrows[^1] : null,
             OriginalResult: originalResult,
             OriginalGuaranteed: originalGuaranteed,
             IsDuplicateRare: isDuplicate,
-            Rarity: rarity);
+            Rarity: rarity,
+            SingleNextPos: resultPos,
+            OriginalNextPos: guaranteedArrows.Count > 1 ? guaranteedArrows[0] : null);
     }
 
     /// <summary>
-    /// 根據軌道類型與列位置，取得包含結果與保底的欄位。
-    /// Track A: 結果和保底在列的前段。
-    /// Track B: 結果和保底在列的後段。
+    /// 單列內「結果欄 + 必中欄」解析出的原始資料。
+    /// 結果欄的箭頭是重複稀有時單抽的落點，必中欄的箭頭是必中十一連的落點，兩者必須分開，不能互相覆蓋。
     /// </summary>
-    private static List<IElement> GetTargetCols(List<IElement> tds, string track, bool isFirstRow)
-    {
-        if (track == "A")
-        {
-            var startOffset = isFirstRow ? 1 : 0;
-            return tds.Skip(startOffset).Take(2).ToList();
-        }
-        else
-        {
-            var endOffset = isFirstRow ? 1 : 0;
-            var count = tds.Count;
-            var start = count - endOffset - 2;
-            if (start < 0) start = 0;
-            return tds.Skip(start).Take(2).ToList();
-        }
-    }
-
     private record ColsData(
         string? Result,
         string? Guaranteed,
-        Position? NextPos,
+        Position? ResultPos,
+        Position? GuaranteedPos,
         string? OriginalResult,
         bool IsDuplicate,
         string? OriginalGuaranteed,
         CatRarity? Rarity);
 
-    private ColsData ExtractColsData(List<IElement> targetCols)
+    /// <param name="resultCol">結果欄；被 rowspan 蓋住而不存在時為 null。</param>
+    /// <param name="guaranteedCol">必中欄；被 rowspan 蓋住而不存在時為 null。</param>
+    private ColsData ExtractColsData(IElement? resultCol, IElement? guaranteedCol)
     {
         string? resText = null;
         string? guaText = null;
-        Position? nextPos = null;
+        Position? resultPos = null;
+        Position? guaranteedPos = null;
         string? origRes = null;
         var isDup = false;
         string? origGua = null;
         CatRarity? rarity = null;
 
-        if (targetCols.Count > 0)
+        if (resultCol is not null)
         {
-            var aTags = targetCols[0].QuerySelectorAll("a").ToList();
-            var validNames = FilterCatNames(aTags);
+            var validNames = FilterCatNames(resultCol.QuerySelectorAll("a").ToList());
 
             if (validNames.Count > 0)
             {
@@ -213,20 +210,13 @@ public sealed partial class BCParser : IParser
                 }
             }
 
-            var fullText = targetCols[0].TextContent.Trim();
-            var posMatch = NextPosPattern().Match(fullText);
-            if (posMatch.Success)
-            {
-                nextPos = new Position(int.Parse(posMatch.Groups[1].Value), posMatch.Groups[2].Value);
-            }
-
-            rarity = ParseRarityFromClass(targetCols[0]);
+            resultPos = FindArrow(resultCol);
+            rarity = ParseRarityFromClass(resultCol);
         }
 
-        if (targetCols.Count > 1)
+        if (guaranteedCol is not null)
         {
-            var aTags = targetCols[1].QuerySelectorAll("a").ToList();
-            var guaNames = FilterCatNames(aTags);
+            var guaNames = FilterCatNames(guaranteedCol.QuerySelectorAll("a").ToList());
 
             if (guaNames.Count > 0)
             {
@@ -237,16 +227,63 @@ public sealed partial class BCParser : IParser
                 }
             }
 
-            var fullText = targetCols[1].TextContent.Trim();
-            var posMatch = NextPosPattern().Match(fullText);
-            if (posMatch.Success)
-            {
-                nextPos = new Position(int.Parse(posMatch.Groups[1].Value), posMatch.Groups[2].Value);
-            }
-
+            guaranteedPos = FindArrow(guaranteedCol);
         }
 
-        return new ColsData(resText, guaText, nextPos, origRes, isDup, origGua, rarity);
+        return new ColsData(resText, guaText, resultPos, guaranteedPos, origRes, isDup, origGua, rarity);
+    }
+
+    /// <summary>讀取儲存格內的位置箭頭（如 "-&gt; 21B"、"&lt;- 12A"）。</summary>
+    private static Position? FindArrow(IElement cell)
+    {
+        var posMatch = NextPosPattern().Match(cell.TextContent.Trim());
+        return posMatch.Success
+            ? new Position(int.Parse(posMatch.Groups[1].Value), posMatch.Groups[2].Value)
+            : null;
+    }
+
+    /// <summary>
+    /// 還原表格的 (列, 欄) 網格，處理 rowspan / colspan 造成的欄位位移。
+    /// </summary>
+    private sealed class CellGrid
+    {
+        private readonly Dictionary<(int Row, int Col), IElement> _cells = [];
+        private readonly Dictionary<IElement, int> _columns = new(ReferenceEqualityComparer.Instance);
+
+        public static CellGrid Build(IReadOnlyList<IElement> rows)
+        {
+            var grid = new CellGrid();
+            var occupied = new HashSet<(int, int)>();
+
+            for (var rowIdx = 0; rowIdx < rows.Count; rowIdx++)
+            {
+                var col = 0;
+                foreach (var cell in rows[rowIdx].QuerySelectorAll("td, th"))
+                {
+                    while (occupied.Contains((rowIdx, col))) col++;
+
+                    var rowspan = ParseSpan(cell.GetAttribute("rowspan"));
+                    var colspan = ParseSpan(cell.GetAttribute("colspan"));
+                    for (var dr = 0; dr < rowspan; dr++)
+                        for (var dc = 0; dc < colspan; dc++)
+                            occupied.Add((rowIdx + dr, col + dc));
+
+                    grid._cells[(rowIdx, col)] = cell;
+                    grid._columns[cell] = col;
+                    col += colspan;
+                }
+            }
+
+            return grid;
+        }
+
+        public static int ParseSpan(string? value) =>
+            int.TryParse(value, out var span) && span > 0 ? span : 1;
+
+        /// <summary>以起始位置查詢儲存格；該位置被其他儲存格的 rowspan 蓋住時回傳 null。</summary>
+        public IElement? CellAt(int row, int col) => _cells.GetValueOrDefault((row, col));
+
+        public int ColumnOf(IElement cell) => _columns[cell];
     }
 
     private static List<string> FilterCatNames(List<IElement> aTags)

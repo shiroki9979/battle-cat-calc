@@ -134,17 +134,26 @@ public class MultiPoolSnapshotTests
     #region B 軌起始
 
     [Fact]
-    public void StartFromTrackB_Cost24()
+    public void StartFromTrackB_Cost20()
     {
         /// 動機：從 B 軌起始搜尋「第9使徒」（1020獨佔），驗證起點軌道不影響搜尋正確性。
         /// 方法：以 1B 起始搜尋。
-        /// 驗證：cost=24。
+        /// 驗證：cost=20。最佳路徑：單抽 B1~B10（B9 抽到拳擊手貓，B10 觸發重複稀有，落在 12A，
+        ///      1 抽前進 2 格），再於 1020 的 12A 做必中十連。1020 的 12A 必中欄為「第9使徒 -> 22B」。
+        ///      舊版漏掉重複稀有的換軌，只能走兩次必中而得到 24。
         var targets = new[] { "第9使徒" }.ToFrozenSet();
 
         var result = Sim.FindBestPath(new Position(1, "B"), targets, 30);
 
         Assert.NotNull(result);
-        Assert.Equal(24, result.TotalCost);
+        Assert.Equal(20, result.TotalCost);
+
+        var last = result.Path[^1];
+        Assert.True(last.IsGuaranteed);
+        Assert.Equal(("1020", new Position(12, "A"), new Position(22, "B")),
+            (last.PoolId, last.Source, last.Target));
+        Assert.Contains(result.Path.Take(result.Path.Count - 1),
+            s => s.IsDuplicateRare && s.Target == new Position(12, "A"));
     }
 
     #endregion

@@ -38,8 +38,16 @@ public sealed class SlotDto
     [JsonPropertyName("guaranteed")]
     public required string Guaranteed { get; init; }
 
+    /// <summary>Where a guaranteed (十連) roll started at this slot lands.</summary>
     [JsonPropertyName("nextPos")]
     public PositionDto? NextPos { get; init; }
+
+    /// <summary>
+    /// Where a single roll lands when the duplicate rare rule is triggered. Null for ordinary slots.
+    /// Distinct from <see cref="NextPos"/>, which is the guaranteed-roll landing.
+    /// </summary>
+    [JsonPropertyName("singleNextPos")]
+    public PositionDto? SingleNextPos { get; init; }
 
     [JsonPropertyName("isDuplicateRare")]
     public bool IsDuplicateRare { get; init; }
@@ -57,6 +65,7 @@ public sealed class SlotDto
         Result = slot.Result.ToString(),
         Guaranteed = slot.Guaranteed.ToString(),
         NextPos = slot.NextPos is { } np ? PositionDto.FromModel(np) : null,
+        SingleNextPos = slot.SingleNextPos is { } snp ? PositionDto.FromModel(snp) : null,
         IsDuplicateRare = slot.IsDuplicateRare,
         Rarity = slot.Rarity?.ToString(),
         GuaranteedRarity = slot.GuaranteedRarity?.ToString()
