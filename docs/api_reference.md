@@ -247,11 +247,16 @@ class GachaSlot:
     id: Position                              # 位置
     result: Union[str, ParseStatus]           # 單抽結果
     guaranteed: Union[str, ParseStatus]       # 保底結果
-    next_pos: Optional[Union[Position, ParseStatus]] = None       # 保底後的跳轉位置
+    next_pos: Optional[Union[Position, ParseStatus]] = None       # 保底後的落點（重複稀有格為替換後的版本）
     original_result: Optional[str] = None     # 替換前的原始結果
     original_guaranteed: Optional[str] = None # 替換前的原始保底
     is_duplicate_rare: bool = False           # 是否為重複稀有格
+    single_next_pos: Optional[Position] = None    # 重複稀有被觸發時，單抽後的落點（HTML 結果欄的箭頭）
+    original_next_pos: Optional[Position] = None  # 重複稀有沒被觸發時的保底落點（對應 original_guaranteed）
 ```
+
+`next_pos` 與 `single_next_pos` 來自 HTML 的不同欄位（必中欄 vs 結果欄），不可混用。
+`single_next_pos` 為 `None` 表示 HTML 沒有標示落點（例如落點超出表格範圍時標 `<?>`）。
 
 ### GachaStep
 
@@ -265,8 +270,8 @@ class GachaStep:
     unit: str                  # 獲得的貓咪
     pool_id: str = ""          # 在哪個池抽的
     is_guaranteed: bool        # 是否為保底抽
-    is_track_switch: bool      # 是否發生跳軌
-    is_duplicate_rare: bool    # 是否因重複稀有跳軌
+    is_track_switch: bool      # 落點的軌道是否與起點不同（必中前 10 抽有重複稀有時可能為 False）
+    is_duplicate_rare: bool    # 這一抽是否觸發重複稀有
     context_data: Optional[dict] = None  # 額外上下文資訊
 ```
 

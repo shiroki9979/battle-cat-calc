@@ -6,7 +6,7 @@ description: Create or update BCParser pytest cases from a real HTML fixture. Us
 # Test BCParser with an HTML fixture
 
 Created: 2026-10-01
-Last updated: 2026-10-01
+Last updated: 2026-10-02
 
 ## Input
 
@@ -33,3 +33,9 @@ behaviors the user wants checked.
 Read fixture text with `Path.read_text(encoding="utf-8")`. Keep expected values
 literal and traceable to the HTML or documented rules. Avoid placeholders and
 assumed track lengths.
+
+When checking duplicate rare slots, restore the `rowspan` grid before reading
+cells: the table stretches a neighbouring slot to three rows to line up with a
+duplicate rare slot, and covered cells shift the remaining `<td>` elements left.
+A slot spanning three rows is not necessarily a duplicate rare slot. Record the
+row numbers you relied on in the test comment.
