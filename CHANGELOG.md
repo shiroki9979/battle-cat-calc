@@ -16,6 +16,7 @@ Last updated: 2026-10-02
 
 ### Changed
 
+- 重新研究轉蛋機制並更新 `docs/gacha_mechanics_zh_TW.md`、`docs/gacha_mechanics_player_guide_zh_TW.md`：新增種子消耗規則（單抽 2 次、必中 1 次、重抽 1 次）、區分 8.5 與 8.6 版的重複稀有替換方式、標示各規則的證據等級，並列出尚未驗證的項目。外部原頁多被出口代理封鎖，結論取自搜尋摘要。
 - 將仍適用的開發規則與領域問答流程整理至 `AGENTS.md`、`docs/agents/domain.md`，並將轉蛋模擬與 HTML 解析測試工作流集中至 `.agents/skills/`。
 
 ### Removed
