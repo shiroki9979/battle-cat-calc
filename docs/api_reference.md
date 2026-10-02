@@ -176,7 +176,7 @@ def find_best_path(
 | `max_rolls` | `int` | 是 | - | 最大抽卡次數限制 |
 | `progress_callback` | `Optional[Callable]` | 否 | `None` | 進度回調，傳入 `(current_cost, states_processed, queue_size)` |
 | `beam_width` | `Optional[int]` | 否 | `None` | Beam Search 寬度限制。`None` 為完整 A* 搜尋。建議值：10000–50000。使用 Beam Search 可能無法找到最佳解 |
-| `prefer_guaranteed` | `bool` | 否 | `False` | 是否偏好十連抽。為 `True` 時單抽成本加小懲罰 (1.11)，讓演算法在成本相近時優先選擇十連抽 |
+| `prefer_guaranteed` | `bool` | 否 | `False` | 是否偏好十連抽。為 `True` 時單抽在搜尋中以 1.11 計價，讓演算法在成本相近時優先選擇十連抽；回傳的 `total_cost` 仍是實際抽數 |
 
 **回傳值**: `Optional[GachaResult]`
 
@@ -237,6 +237,21 @@ class Position:
     track: str   # 軌道 ('A' 或 'B')
 ```
 
+### CatRarity
+
+貓咪稀有度，取自頁面的貓咪目錄（`#find_select`）。
+
+```python
+class CatRarity(Enum):
+    RARE = "Rare"
+    SUPER_RARE = "SuperRare"
+    UBER_RARE = "UberRare"
+    LEGEND = "Legend"
+```
+
+儲存格的 CSS class 是 godfat 依慶典費率上色的「稀有度帶」，與貓本身的稀有度會不一致，
+遊戲規則的判定（連續重複稀有）一律用目錄。
+
 ### GachaSlot
 
 代表轉蛋表格中的單一格子。
@@ -253,6 +268,8 @@ class GachaSlot:
     is_duplicate_rare: bool = False           # 是否為重複稀有格
     single_next_pos: Optional[Position] = None    # 重複稀有被觸發時，單抽後的落點（HTML 結果欄的箭頭）
     original_next_pos: Optional[Position] = None  # 重複稀有沒被觸發時的保底落點（對應 original_guaranteed）
+    rarity: Optional[CatRarity] = None            # 單抽結果的稀有度（目錄）
+    guaranteed_rarity: Optional[CatRarity] = None # 保底結果的稀有度（目錄）
 ```
 
 `next_pos` 與 `single_next_pos` 來自 HTML 的不同欄位（必中欄 vs 結果欄），不可混用。
@@ -297,7 +314,7 @@ class GachaPool:
 ```python
 @dataclass
 class GachaResult:
-    total_cost: int                     # 總花費抽數
+    total_cost: int                     # 總花費抽數（由路徑重算：單抽 1、必中 guaranteed_cost）
     path: Tuple[GachaStep, ...]         # 路徑步驟
     collected: Set[str]                 # 收集到的貓咪
     start_pos: Optional[Position]       # 起始位置

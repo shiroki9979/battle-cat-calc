@@ -12,6 +12,19 @@ Last updated: 2026-10-02
 
 ### Fixed
 
+- **搜尋演算法的三項設計修正**（Python 與 .NET 同步）：
+  - 啟發式改為真正的下界：每隻貓 `min(1, guaranteed_cost / 11)`、每格
+    `min(1 / 最大單抽前進格數, guaranteed_cost / 最大必中前進格數)`，係數由資料算出。
+    舊版把兩者寫死為 1，但必中從 B 軌出發前進 11 格、一次必中拿 11 隻，會高估剩餘成本而失去 A* 的最優性保證
+    （實測未觀察到錯誤結果，屬理論缺口）。新增以關閉啟發式的 Dijkstra 為基準的隨機交叉驗證測試。
+  - 偵測表格沒標、但遊戲會觸發的連續重複稀有：狀態改記住所有目錄標為稀有的貓（`GachaSlot.rarity`，
+    取自 `#find_select`，不用儲存格的 CSS class），走到一般格而上一隻就是這格的貓時拒走（回傳 `None`），
+    不再假裝沒事。狀態數約 +40%。
+  - 排序穩定：佇列元素改為 `(f, -g, state_id, state)`，f 相同先展開 g 大的，結果可重現；
+    `SearchState` 不再 `order=True`（舊版 f 相同的不同狀態會被視為相等）。
+  - Python 的 `GachaResult.total_cost` 改由路徑重算實際抽數；舊版在 `prefer_guaranteed=True` 時回報 `11.11` 這種加權值，與 .NET 版不一致。
+  - .NET：`GachaSlot` 新增 `ResultRarity`（目錄稀有度；`Rarity` 仍是儲存格 class 的上色帶，供前端使用），
+    `GachaSimulator` 新增測試用的 `HeuristicEnabled` 接縫與 `MinCostPerAdvance` / `MinCostPerCat`（internal）。
 - **重複稀有的解析與模擬**（`src/battle_cat_calc/parser.py`、`simulator.py`、`models.py`）：
   - parser 以 `rowspan` 還原表格網格後才歸屬儲存格。舊版用「同一列的第 N 個 `<td>`」，會把相鄰軌道格子的內容讀成自己的，
     導致 `A11`、`B100` 被誤判為重複稀有格（`B10`、`A100` 才是）。
