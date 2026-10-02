@@ -187,7 +187,7 @@ removed separately while keeping `test-results/.gitkeep`.
 
 ## Continuous integration
 
-Pull requests and pushes to `main` build the client and run both Compose test services. GitHub
+Pull requests and pushes to `main` or `dev` build the client and run both Compose test services. GitHub
 Actions matches the SDK UID/GID to the runner's account, uploads TRX and Cobertura
 reports as the `dotnet-test-results` artifact even after test failures, and builds
 the production image only after successful tests. The same artifact also includes
