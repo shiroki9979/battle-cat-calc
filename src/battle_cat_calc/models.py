@@ -24,10 +24,16 @@ class GachaSlot:
     id: Position  # Changed from Tuple[int, str] to Position
     result: Union[str, ParseStatus]
     guaranteed: Union[str, ParseStatus]
+    # 必中十一連結束後的落點（重複稀有格為「替換後」的版本）。
     next_pos: Optional[Union[Position, ParseStatus]] = None
     original_result: Optional[str] = None
     original_guaranteed: Optional[str] = None
     is_duplicate_rare: bool = False
+    # 重複稀有被觸發時，「單抽」之後的落點。與必中落點是兩個不同的箭頭，
+    # 混用會讓單抽跳到十格之外。僅重複稀有格有值。
+    single_next_pos: Optional[Position] = None
+    # 重複稀有「沒被觸發」時（上一隻不是同一隻貓）的必中落點，對應 original_guaranteed。
+    original_next_pos: Optional[Position] = None
 
 class Track(UserList):
     """包含一系列 GachaSlots 的專業容器。

@@ -1,9 +1,17 @@
 import bisect
 import heapq
 import itertools
-from typing import List, Optional, Set, Tuple, Dict, Union, Callable
+from typing import List, NamedTuple, Optional, Set, Tuple, Dict, Union, Callable
 from dataclasses import dataclass, field
 from .models import Track, GachaSlot, Position, ParseStatus, GachaStep, GachaPool, GachaResult
+
+
+class _RollOutcome(NamedTuple):
+    """單抽一個格子的結果。"""
+    unit: str
+    next_pos: Position
+    is_duplicate_rare: bool
+
 
 @dataclass(frozen=True, order=True, slots=True)
 class SearchState:
@@ -26,7 +34,8 @@ class SearchState:
     state_id: int = field(compare=False, default=0)
     parent_id: Optional[int] = field(compare=False, default=None)
     last_step: Optional[GachaStep] = field(compare=False, default=None)
-    # 追蹤上一抽的稀有貓名稱，用於跨池重複稀有判定
+    # 上一抽「實際拿到」的貓，用於跨池重複稀有判定。只保留可能觸發重複的貓
+    # （曾在某個重複稀有格被替換掉的貓），其餘存 None，避免狀態空間無謂膨脹。
     last_rolled_rare: Optional[str] = field(compare=False, default=None)
 
 class GachaSimulator:
@@ -65,6 +74,58 @@ class GachaSimulator:
             )
             self.pools = {"default": default_pool}
             self.is_multi_pool = False
+
+        self._prepare_duplicate_rules()
+
+    def _prepare_duplicate_rules(self) -> None:
+        """掃描所有池，整理重複稀有判定需要的資訊。
+
+        - _dup_candidates：會在某個重複稀有格被替換掉的貓。只有上一抽拿到這些貓，
+          下一格才可能觸發重複，所以狀態只需要記住它們。
+        - _max_single_advance：重複稀有時單抽一次最多前進幾格，供啟發式估計使用。
+        """
+        candidates: Set[str] = set()
+        max_advance = 1
+        for pool in self.pools.values():
+            for track in (pool.track_a, pool.track_b):
+                if not track:
+                    continue
+                for slot in track:
+                    if not (slot.is_duplicate_rare and isinstance(slot.original_result, str)):
+                        continue
+                    candidates.add(slot.original_result)
+                    if isinstance(slot.single_next_pos, Position):
+                        max_advance = max(max_advance, slot.single_next_pos.id - slot.id.id)
+        self._dup_candidates: frozenset = frozenset(candidates)
+        self._max_single_advance: int = max_advance
+
+    def _remember(self, unit: str) -> Optional[str]:
+        """決定要不要把剛拿到的貓記進狀態（見 SearchState.last_rolled_rare）。"""
+        return unit if unit in self._dup_candidates else None
+
+    def _resolve_single_roll(self, slot: GachaSlot, last_cat: Optional[str]) -> Optional[_RollOutcome]:
+        """計算在 slot 單抽一次會拿到什麼、落在哪。
+
+        重複稀有格的表格資料是假設「上一隻就是同一隻貓」算出來的：
+        - 上一隻確實是 original_result：觸發重複，拿替換後的貓，落點用網站標示的單抽落點。
+        - 否則（例如從別的軌道、別的池或必中十連後走到這格）不會觸發，拿的是替換前的貓，
+          同軌前進一格。
+
+        Returns:
+            None 代表這格無法可靠模擬（資料無效，或觸發重複卻沒有標示落點）。
+        """
+        if self._is_invalid(slot.result):
+            return None
+
+        plain_next = Position(slot.id.id + 1, slot.id.track)
+        if not (slot.is_duplicate_rare and isinstance(slot.original_result, str)):
+            return _RollOutcome(slot.result, plain_next, False)
+
+        if last_cat == slot.original_result:
+            if not isinstance(slot.single_next_pos, Position):
+                return None
+            return _RollOutcome(slot.result, slot.single_next_pos, True)
+        return _RollOutcome(slot.original_result, plain_next, False)
 
     def _get_slot(self, pos_id: int, pos_track: str, pool_id: str = "default") -> Optional[GachaSlot]:
         """從指定池取得格子資料。"""
@@ -128,16 +189,12 @@ class GachaSimulator:
                     continue
                 for slot in track:
                     pos_id = slot.id.id
-                    if isinstance(slot.result, str) and slot.result in cat_max_pos:
-                        cat = slot.result
-                        if pos_id > cat_max_pos[cat]:
-                            cat_max_pos[cat] = pos_id
-                        cat_pos_sets[cat].add(pos_id)
-                    if isinstance(slot.guaranteed, str) and slot.guaranteed in cat_max_pos:
-                        cat = slot.guaranteed
-                        if pos_id > cat_max_pos[cat]:
-                            cat_max_pos[cat] = pos_id
-                        cat_pos_sets[cat].add(pos_id)
+                    # 重複稀有格沒被觸發時拿的是替換前的貓，所以 original_* 也算可得。
+                    for value in (slot.result, slot.guaranteed, slot.original_result, slot.original_guaranteed):
+                        if isinstance(value, str) and value in cat_max_pos:
+                            if pos_id > cat_max_pos[value]:
+                                cat_max_pos[value] = pos_id
+                            cat_pos_sets[value].add(pos_id)
         
         target_sorted_positions = {cat: sorted(positions) for cat, positions in cat_pos_sets.items()}
         return cat_max_pos, target_sorted_positions
@@ -215,8 +272,11 @@ class GachaSimulator:
                 f"以下目標貓咪不存在於任何池的搜索資料中：{', '.join(sorted(missing))}"
             )
         
+        self._prepare_duplicate_rules()
+        # 重複稀有時單抽一次可前進多格（例如 10B → 12A 前進 2 格），每格成本因此更低；
+        # 不計入的話啟發式會高估剩餘成本，破壞 A* 的最優性。
         self._min_cost_per_advance = min(
-            1.0,
+            1.0 / self._max_single_advance,
             min((pool.guaranteed_cost / 10 for pool in self.pools.values() if pool.has_guaranteed), default=1.0)
         )
         
@@ -353,30 +413,19 @@ class GachaSimulator:
             target_count: 目標貓咪總數（避免重複計算 len）
         """
         slot = self._get_slot(state.pos_id, state.pos_track, pool_id)
-        if not slot or self._is_invalid(slot.result):
+        if not slot:
             return
 
         new_cost = state.cost + single_roll_cost
         if new_cost > max_rolls:
             return
 
-        actual_unit = slot.result  # _is_invalid 已排除 ParseStatus，此處必為 str
-        
-        # 檢查是否觸發重複稀有（目前假設 is_duplicate_rare 由 parser 標記）
-        is_dup_rare = slot.is_duplicate_rare and (state.last_rolled_rare == slot.original_result)
-        
-        # 決定實際獲得的貓咪與下一個位置
-        if is_dup_rare and slot.next_pos and isinstance(slot.next_pos, Position):
-            # 重複稀有觸發：使用替換結果，跳軌
-            next_pos = slot.next_pos
-        else:
-            # 正常單抽：前進到同軌道下一格
-            next_pos = Position(state.pos_id + 1, state.pos_track)
-            is_dup_rare = False  # 確保未觸發時為 False
-
-        # 更新 last_rolled_rare：只有稀有貓會更新此欄位
-        # 簡化判斷：若 slot 有 original_result，代表這是稀有貓替換情境
-        new_last_rare = actual_unit if slot.is_duplicate_rare or slot.original_result else state.last_rolled_rare
+        outcome = self._resolve_single_roll(slot, state.last_rolled_rare)
+        if outcome is None:
+            return
+        actual_unit = outcome.unit
+        next_pos = outcome.next_pos
+        new_last_rare = self._remember(actual_unit)
 
         step = GachaStep(
             source=Position(state.pos_id, state.pos_track),
@@ -385,7 +434,7 @@ class GachaSimulator:
             pool_id=pool_id,
             is_guaranteed=False,
             is_track_switch=(next_pos.track != state.pos_track),
-            is_duplicate_rare=is_dup_rare,
+            is_duplicate_rare=outcome.is_duplicate_rare,
             context_data={'last_rolled_rare': state.last_rolled_rare}
         )
 
@@ -441,61 +490,72 @@ class GachaSimulator:
             return
 
         slot = self._get_slot(state.pos_id, state.pos_track, pool_id)
-        # 檢查起始格是否有效且包含必要的保底/跳軌資訊
-        if not slot or self._is_invalid(slot.guaranteed) or not isinstance(slot.next_pos, Position):
+        if not slot:
             return
 
         collected_in_roll = set()
-        last_rare_in_roll = state.last_rolled_rare  # 追蹤十連中最後的稀有貓
-        
-        # 迴圈外取得 track 物件，避免每次迭代都重複做 pool/track 查找
-        track = pool.track_a if state.pos_track == 'A' else pool.track_b
-        
-        # 檢查接下來 10 格的貓咪（不含保底）
+        last_cat = state.last_rolled_rare
+        pos = Position(state.pos_id, state.pos_track)
+        start_triggered_dup = False
+
+        # 前 10 抽照單抽規則走：遇到重複稀有會換軌並多前進，不能假設一直在同一軌的 pos+i。
         for i in range(10):
-            s = track.get_slot(state.pos_id + i)
-            if not s or self._is_invalid(s.result):
-                return # 資料不完整，無法執行保底模擬
-            unit = s.result  # _is_invalid 已排除 ParseStatus
-            if unit in target_cats:
-                collected_in_roll.add(unit)
-            # 更新最後的稀有貓記錄（簡化判斷）
-            if s.is_duplicate_rare or s.original_result:
-                last_rare_in_roll = unit
-        
-        # 加入保底貓咪（保底是超激，不影響重複稀有判定）
-        gua_unit = slot.guaranteed  # 已確認非 ParseStatus
+            s = self._get_slot(pos.id, pos.track, pool_id)
+            if not s:
+                return  # 資料不完整，無法執行保底模擬
+            outcome = self._resolve_single_roll(s, last_cat)
+            if outcome is None:
+                return
+            if i == 0:
+                start_triggered_dup = outcome.is_duplicate_rare
+            if outcome.unit in target_cats:
+                collected_in_roll.add(outcome.unit)
+            last_cat = outcome.unit
+            pos = outcome.next_pos
+
+        # 表格的必中欄是以起始格自己的重複狀態算出來的：
+        # 起始格是重複稀有格但沒被觸發時，要用替換前的版本。
+        if (slot.is_duplicate_rare and not start_triggered_dup
+                and slot.original_guaranteed is not None
+                and isinstance(slot.original_next_pos, Position)):
+            gua_unit, landing = slot.original_guaranteed, slot.original_next_pos
+        else:
+            gua_unit, landing = slot.guaranteed, slot.next_pos
+        if self._is_invalid(gua_unit) or not isinstance(landing, Position):
+            return
+
+        # 第 11 隻是必中超激，它成為「上一隻」，因此重複判定在這之後重置。
+        # 此為依規則推得的假設，尚無資料可獨立驗證。
         if gua_unit in target_cats:
             collected_in_roll.add(gua_unit)
-            
+
         new_collected = state.collected | frozenset(collected_in_roll)
 
         step = GachaStep(
             source=Position(state.pos_id, state.pos_track),
-            target=slot.next_pos,
+            target=landing,
             unit=gua_unit,
             pool_id=pool_id,
             is_guaranteed=True,
-            is_track_switch=True,
+            # 前 10 抽內發生奇數次重複稀有時，必中後會留在原軌道（例如 1B → 12B）。
+            is_track_switch=(landing.track != state.pos_track),
             is_duplicate_rare=False,  # 保底本身不是重複稀有
             context_data={'collected_units': list(collected_in_roll)}
         )
 
         new_id = next(id_counter)
-        h = self._heuristic(new_collected, target_cats, target_count, slot.next_pos.id)
-        
-        # 保底後的 last_rolled_rare：使用最後一格（第 10 格）的結果
-        # 待驗證：是否保底超激會重置此記錄
+        h = self._heuristic(new_collected, target_cats, target_count, landing.id)
+
         new_state = SearchState(
             priority=new_cost + h,  # A*: f = g + h
             cost=new_cost,
-            pos_id=slot.next_pos.id,
-            pos_track=slot.next_pos.track,
+            pos_id=landing.id,
+            pos_track=landing.track,
             collected=new_collected,
             state_id=new_id,
             parent_id=state.state_id,
             last_step=step,
-            last_rolled_rare=last_rare_in_roll  # 保留最後稀有貓記錄
+            last_rolled_rare=self._remember(gua_unit)
         )
         
         state_map[new_id] = new_state

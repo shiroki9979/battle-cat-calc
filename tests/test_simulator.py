@@ -1,6 +1,7 @@
 import pytest
+from dataclasses import replace
 from battle_cat_calc.simulator import GachaSimulator
-from battle_cat_calc.models import Track, GachaSlot, Position, ParseStatus
+from battle_cat_calc.models import Track, GachaSlot, Position, ParseStatus, GachaPool
 
 def test_simulator_simple_single():
     """測試基本的單抽模擬。
@@ -106,26 +107,141 @@ def test_simulator_duplicate_rare_switch():
     方法：建立一個 Track A，其中 2A 和 3A 原本都是同一隻貓，3A 發生替換並跳到 B 軌。
           驗證模擬器能正確處理這種跳軌情況，找到 B 軌上的目標。
     """
-    # 模擬情境：3A 是重複稀有格，抽完後跳到 4B
+    # 模擬情境：2A 抽到 Archer（普通格），3A 的原始貓也是 Archer → 觸發重複，抽完跳到 4B
+    sim = GachaSimulator(*_duplicate_rare_tracks())
+
+    # 4B 的目標只有透過重複稀有的換軌才到得了（沿 A 軌走會到 4A）
+    result = sim.find_best_path(Position(1, 'A'), {"TargetCatB4"}, 5)
+    assert result is not None
+    assert result.total_cost == 4
+    assert [step.unit for step in result.path] == ["Cat1", "Archer", "ArcherReplaced", "TargetCatB4"]
+
+    dup_step = result.path[2]
+    assert dup_step.is_duplicate_rare is True
+    assert dup_step.is_track_switch is True
+    assert dup_step.target == Position(4, 'B')
+
+
+def _duplicate_rare_tracks():
+    """1A Cat1、2A Archer、3A 重複稀有（原始 Archer → ArcherReplaced，單抽落在 4B）。"""
     track_a = Track("A", [
         GachaSlot(id=Position(1, 'A'), result="Cat1", guaranteed="Gua1", next_pos=Position(11, 'B')),
         GachaSlot(id=Position(2, 'A'), result="Archer", guaranteed="Gua2", next_pos=Position(12, 'B')),
-        GachaSlot(id=Position(3, 'A'), result="ArcherReplaced", guaranteed="Gua3", next_pos=Position(4, 'B'), 
-                  original_result="Archer", is_duplicate_rare=True),
+        GachaSlot(id=Position(3, 'A'), result="ArcherReplaced", guaranteed="Gua3", next_pos=Position(13, 'B'),
+                  original_result="Archer", is_duplicate_rare=True,
+                  single_next_pos=Position(4, 'B')),
         GachaSlot(id=Position(4, 'A'), result="Cat4", guaranteed="Gua4", next_pos=Position(14, 'B')),
     ])
     track_b = Track("B", [
         GachaSlot(id=Position(4, 'B'), result="TargetCatB4", guaranteed="GuaB4", next_pos=None),
         GachaSlot(id=Position(5, 'B'), result="CatB5", guaranteed="GuaB5", next_pos=None),
     ])
-    
-    sim = GachaSimulator(track_a, track_b)
-    
-    # 測試：能否找到 Track B 上的目標？
-    # 注意：目前模擬器的單抽邏輯假設不使用 next_pos，所以這個測試主要驗證資料模型的完整性
-    result = sim.find_best_path(Position(1, 'A'), {"Cat1"}, 5)
+    return track_a, track_b
+
+
+def test_simulator_duplicate_rare_not_triggered():
+    """上一隻不是同一隻貓時不觸發重複：拿到替換前的貓，同軌前進一格。
+
+    動機：表格的重複稀有格是假設「上一隻就是同一隻」算出來的；
+          從別的路徑走到這格時，不能直接拿替換後的結果。
+    """
+    sim = GachaSimulator(*_duplicate_rare_tracks())
+
+    result = sim.find_best_path(Position(3, 'A'), {"Archer"}, 1)
     assert result is not None
-    assert result.total_cost == 1
+    step, = result.path
+    assert (step.unit, step.target, step.is_duplicate_rare) == ("Archer", Position(4, 'A'), False)
+
+    assert sim.find_best_path(Position(3, 'A'), {"ArcherReplaced"}, 1) is None
+
+
+def test_simulator_duplicate_rare_without_landing_is_not_guessed():
+    """觸發重複卻沒有單抽落點（例如 HTML 標 <?>）時，不猜落點，該路徑視為不可走。"""
+    track_a, track_b = _duplicate_rare_tracks()
+    track_a.get_slot(3).single_next_pos = None
+    sim = GachaSimulator(track_a, track_b)
+
+    assert sim.find_best_path(Position(1, 'A'), {"TargetCatB4"}, 5) is None
+
+
+class TestGuaranteedWithDuplicateRare:
+    """必中十連的前 10 抽照單抽規則走，重複稀有會換軌，不是固定同軌的 pos+0..pos+9。"""
+
+    @staticmethod
+    def _plain(track, prefix, other_track):
+        return [
+            GachaSlot(id=Position(i, track), result=f"{prefix}{i}", guaranteed=f"Gua{prefix}{i}",
+                      next_pos=Position(i + 10, other_track))
+            for i in range(1, 15)
+        ]
+
+    def _sim(self, track_a, track_b, guaranteed_cost=3):
+        # 必中成本設得比單抽便宜，讓搜尋偏好必中，才測得到必中分支
+        pool = GachaPool("p", "p", Track("A", track_a), Track("B", track_b),
+                         has_guaranteed=True, guaranteed_cost=guaranteed_cost)
+        return GachaSimulator([pool])
+
+    def test_window_follows_track_switch(self):
+        """1A 起：1A、2A(Archer)、3A 重複 → 5B，之後走 B 軌，第 8 隻是 8B 而不是 8A。"""
+        a, b = self._plain('A', 'A', 'B'), self._plain('B', 'B', 'A')
+        a[1] = replace(a[1], result="Archer")
+        a[2] = replace(a[2], result="ArcherReplaced", original_result="Archer",
+                       is_duplicate_rare=True, single_next_pos=Position(5, 'B'))
+        b[7] = replace(b[7], result="OnPath")    # 8B：實際走到
+        a[7] = replace(a[7], result="OffPath")   # 8A：舊版固定取 pos+i 會誤收
+        sim = self._sim(a, b)
+
+        result = sim.find_best_path(Position(1, 'A'), {"OnPath"}, 10)
+        assert result is not None
+        assert result.total_cost == 3
+        step, = result.path
+        assert step.is_guaranteed is True
+        assert step.context_data['collected_units'] == ["OnPath"]
+
+        # 走過 3A 的重複之後就回不到 A 軌的 8A，必中也收不到它
+        assert sim.find_best_path(Position(1, 'A'), {"OffPath"}, 20) is None
+
+    def test_start_slot_duplicate_not_triggered_uses_original_variant(self):
+        """起始格是重複稀有格但沒被觸發：必中用替換前的超激與落點。"""
+        sim = self._sim(*self._duplicate_variant_tracks())
+
+        result = sim.find_best_path(Position(2, 'A'), {"GuaOrig"}, 5)
+        assert result is not None
+        step, = result.path
+        assert (step.unit, step.target) == ("GuaOrig", Position(12, 'A'))
+        assert step.is_track_switch is False
+
+    def test_start_slot_duplicate_triggered_uses_replaced_variant(self):
+        """先單抽 1A（Orig）再在 2A 做必中：2A 觸發重複，用替換後的超激與落點。"""
+        sim = self._sim(*self._duplicate_variant_tracks())
+
+        result = sim.find_best_path(Position(1, 'A'), {"GuaRepl"}, 5)
+        assert result is not None
+        assert result.total_cost == 4
+        single, guaranteed = result.path
+        assert single.unit == "Orig"
+        assert (guaranteed.unit, guaranteed.target) == ("GuaRepl", Position(12, 'B'))
+        assert guaranteed.is_track_switch is True
+
+    def _duplicate_variant_tracks(self):
+        a, b = self._plain('A', 'A', 'B'), self._plain('B', 'B', 'A')
+        a[0] = replace(a[0], result="Orig")
+        a[1] = replace(a[1], result="Repl", guaranteed="GuaRepl", next_pos=Position(12, 'B'),
+                       original_result="Orig", original_guaranteed="GuaOrig",
+                       original_next_pos=Position(12, 'A'), is_duplicate_rare=True,
+                       single_next_pos=Position(4, 'B'))
+        return a, b
+
+    def test_heuristic_rate_uses_largest_duplicate_advance(self):
+        """單抽最多前進 3 格時，每格最低成本不可高於 1/3，啟發式才維持下界。"""
+        a, b = self._plain('A', 'A', 'B'), self._plain('B', 'B', 'A')
+        a[1] = replace(a[1], result="Archer")
+        a[2] = replace(a[2], original_result="Archer", is_duplicate_rare=True,
+                       single_next_pos=Position(6, 'B'))
+        sim = self._sim(a, b, guaranteed_cost=10)
+
+        sim.find_best_path(Position(1, 'A'), {"A1"}, 1)
+        assert sim._min_cost_per_advance <= 1 / 3
 
 def test_simulator_no_path_found():
     """測試在限制內找不到路徑的情況。
