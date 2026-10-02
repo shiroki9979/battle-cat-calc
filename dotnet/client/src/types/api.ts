@@ -30,7 +30,10 @@ export interface SlotDto {
   track: string;
   result: string;
   guaranteed: string;
+  /** 這格做必中十一連後的落點 */
   nextPos: Position | null;
+  /** 重複稀有被觸發時，單抽後的落點；一般格為 null */
+  singleNextPos: Position | null;
   isDuplicateRare: boolean;
   rarity: CatRarity | null;
   guaranteedRarity: CatRarity | null;

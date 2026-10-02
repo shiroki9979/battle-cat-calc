@@ -169,23 +169,22 @@ public class GachaSimulatorTests
     [Fact]
     public void FindBestPath_DuplicateRare_HandlesTrackSwitch()
     {
-        // 設定第 2 格為重複稀有：若上次稀有 = "RareCat"，觸發跳軌到 5B
+        // 設定第 2 格為重複稀有：上一隻是 "RareCat" 時觸發，單抽落在 5B
         var trackA = new Track("A",
         [
             new GachaSlot(
                 new Position(1, "A"),
                 new SlotValue.CatName("RareCat"),
                 new SlotValue.CatName("Gua1"),
-                new Position(11, "B"),
-                OriginalResult: "RareCat",
-                IsDuplicateRare: false),
+                new Position(11, "B")),
             new GachaSlot(
                 new Position(2, "A"),
                 new SlotValue.CatName("ReplacementCat"),
                 new SlotValue.CatName("Gua2"),
-                new Position(5, "B"),
+                new Position(12, "B"),
                 OriginalResult: "RareCat",
-                IsDuplicateRare: true),
+                IsDuplicateRare: true,
+                SingleNextPos: new Position(5, "B")),
             .. Enumerable.Range(3, 18).Select(i => new GachaSlot(
                 new Position(i, "A"),
                 new SlotValue.CatName($"Cat{i}"),
@@ -197,13 +196,17 @@ public class GachaSimulatorTests
         var pool = new GachaPool("default", "Default", trackA, trackB);
         var sim = new GachaSimulator([pool]);
         var start = new Position(1, "A");
-        // 目標是 Cat5（在 5B），重複稀有跳軌可能影響路徑
+        // 目標是 Cat5（在 5B）；沿 A 軌走到不了，只有透過 2A 的重複稀有換軌才到得了：1A → 2A → 5B
         var targets = new[] { "Cat5" }.ToFrozenSet();
 
         var result = sim.FindBestPath(start, targets);
 
         Assert.NotNull(result);
         Assert.Contains("Cat5", (IEnumerable<string>)result.Collected);
+        Assert.Equal(3, result.TotalCost);
+        Assert.Equal(["RareCat", "ReplacementCat", "Cat5"], result.Path.Select(s => s.Unit));
+        Assert.True(result.Path[1].IsDuplicateRare);
+        Assert.True(result.Path[1].IsTrackSwitch);
     }
 
     #endregion

@@ -78,31 +78,98 @@ public class BCParserSnapshotTests
         Assert.Equal(Enumerable.Range(1, 100).ToList(), ids);
     }
 
-    [Fact]
-    public void TrackA_Slot11_DuplicateRare()
-    {
-        /// 動機：A11 在 Python 版為重複稀有格，驗證跨語言一致。
-        /// 方法：取 TrackA.GetSlot(11)。
-        /// 驗證：is_duplicate_rare=true, original=侏羅貓, result=明日香貓, next=21B。
-        var slot = TrackA.GetSlot(11);
-
-        Assert.NotNull(slot);
-        Assert.True(slot!.IsDuplicateRare);
-        Assert.Equal("侏羅貓", slot.OriginalResult);
-        Assert.Equal("明日香貓", slot.Result.AsCatName());
-        Assert.Equal(new Position(21, "B"), slot.NextPos);
-    }
+    // 以下重複稀有的期望值取自 HTML 原文（<tr> 以 0 起算；欄位以 rowspan 還原後的網格為準）：
+    //   第 19 列  B9 的貓                  「拳擊手貓」
+    //   第 21 列  B10 替換前               「拳擊手貓」 必中「<- 21A 白夜姬零」
+    //   第 22 列  B10 替換後               「<- 12A 侏羅貓」 必中「EVA初號機 -> 21B」
+    //   第 21~23 列 A11（3 列只是配合 B10 的版面拉伸）結果欄只有第 23 列的「明日香貓」
+    //   第 201~202 列 A100 原始「侏羅貓」、替換「<?> 薰貓」（A99 也是侏羅貓）
 
     [Fact]
     public void TrackB_Slot10_DuplicateRare()
     {
-        /// 動機：B10 在 Python 版亦為重複稀有格。
-        /// 方法：取 TrackB.GetSlot(10)。
-        /// 驗證：is_duplicate_rare=true。
+        /// 動機：B10 是同軌連續重複：B9、B10 的原始貓都是拳擊手貓，被替換成侏羅貓。
+        /// 方法：取 TrackB.GetSlot(9) 與 GetSlot(10)。
+        /// 驗證：B9 結果為拳擊手貓；B10 為重複稀有格，original=拳擊手貓、result=侏羅貓。
+        Assert.Equal("拳擊手貓", TrackB.GetSlot(9)!.Result.AsCatName());
+
         var slot = TrackB.GetSlot(10);
 
         Assert.NotNull(slot);
         Assert.True(slot!.IsDuplicateRare);
+        Assert.Equal("拳擊手貓", slot.OriginalResult);
+        Assert.Equal("侏羅貓", slot.Result.AsCatName());
+    }
+
+    [Fact]
+    public void TrackB_Slot10_SingleAndGuaranteedArrowsAreKeptApart()
+    {
+        /// 動機：B10 的單抽落點（結果欄 <- 12A）與必中落點（必中欄）是不同的箭頭，不可混用；
+        ///      舊版後者覆蓋前者，單抽觸發重複時會跳到十格之外。
+        /// 驗證：SingleNextPos=12A；NextPos=21B（替換後）；OriginalNextPos=21A（替換前）。
+        var slot = TrackB.GetSlot(10)!;
+
+        Assert.Equal(new Position(12, "A"), slot.SingleNextPos);
+        Assert.Equal(new Position(21, "B"), slot.NextPos);
+        Assert.Equal(new Position(21, "A"), slot.OriginalNextPos);
+        Assert.Equal("白夜姬零", slot.OriginalGuaranteed);
+        Assert.Equal("EVA初號機", slot.Guaranteed.AsCatName());
+    }
+
+    [Fact]
+    public void TrackA_Slot11_IsNotDuplicateRare()
+    {
+        /// 動機：A11 佔 3 列只是版面拉伸，結果欄只有「明日香貓」，不是重複稀有格；
+        ///      第 22 列的「侏羅貓」是 B10 的替換結果，舊版 parser 誤把它當成 A11 的原始貓。
+        /// 驗證：非重複稀有、無 original、result=明日香貓、next=21B、無單抽落點。
+        var slot = TrackA.GetSlot(11);
+
+        Assert.NotNull(slot);
+        Assert.False(slot!.IsDuplicateRare);
+        Assert.Null(slot.OriginalResult);
+        Assert.Equal("明日香貓", slot.Result.AsCatName());
+        Assert.Equal("EVA初號機", slot.Guaranteed.AsCatName());
+        Assert.Equal(new Position(21, "B"), slot.NextPos);
+        Assert.Null(slot.SingleNextPos);
+    }
+
+    [Fact]
+    public void TrackA_Slot100_EndOfTableDuplicate_HasNoLanding()
+    {
+        /// 動機：A99、A100 的原始貓都是侏羅貓，A100 替換成薰貓；HTML 標 <?>，落點超出表格範圍。
+        /// 驗證：A100 為重複稀有格，且沒有單抽落點（不可猜）。
+        Assert.Equal("侏羅貓", TrackA.GetSlot(99)!.Result.AsCatName());
+
+        var slot = TrackA.GetSlot(100)!;
+
+        Assert.True(slot.IsDuplicateRare);
+        Assert.Equal("侏羅貓", slot.OriginalResult);
+        Assert.Equal("薰貓", slot.Result.AsCatName());
+        Assert.Null(slot.SingleNextPos);
+    }
+
+    [Fact]
+    public void TrackB_Slot100_IsNotDuplicateRare()
+    {
+        /// 動機：B100 的結果欄只有「魔劍士貓」；「薰貓」是 A100 的替換結果，舊版 parser 誤讀進來。
+        var slot = TrackB.GetSlot(100)!;
+
+        Assert.False(slot.IsDuplicateRare);
+        Assert.Null(slot.OriginalResult);
+        Assert.Equal("魔劍士貓", slot.Result.AsCatName());
+    }
+
+    [Fact]
+    public void DuplicateRareSlots_OnlyB10AndA100()
+    {
+        /// 動機：HTML 中佔 3 列的格子有 A11、B10、A100、B100 四個，其中 A11、B100 只是
+        ///      配合相鄰重複稀有格的版面拉伸，不是重複稀有格。
+        var flagged = TrackA.Concat(TrackB)
+            .Where(s => s.IsDuplicateRare)
+            .Select(s => s.Id)
+            .ToHashSet();
+
+        Assert.Equal(new HashSet<Position> { new(10, "B"), new(100, "A") }, flagged);
     }
 
     [Fact]

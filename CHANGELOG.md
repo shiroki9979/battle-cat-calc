@@ -12,10 +12,52 @@ Last updated: 2026-10-02
 
 ### Fixed
 
+- **搜尋演算法的三項設計修正**（Python 與 .NET 同步）：
+  - 啟發式改為真正的下界：每隻貓 `min(1, guaranteed_cost / 11)`、每格
+    `min(1 / 最大單抽前進格數, guaranteed_cost / 最大必中前進格數)`，係數由資料算出。
+    舊版把兩者寫死為 1，但必中從 B 軌出發前進 11 格、一次必中拿 11 隻，會高估剩餘成本而失去 A* 的最優性保證
+    （實測未觀察到錯誤結果，屬理論缺口）。新增以關閉啟發式的 Dijkstra 為基準的隨機交叉驗證測試。
+  - 偵測表格沒標、但遊戲會觸發的連續重複稀有：狀態改記住所有目錄標為稀有的貓（`GachaSlot.rarity`，
+    取自 `#find_select`，不用儲存格的 CSS class），走到一般格而上一隻就是這格的貓時拒走（回傳 `None`），
+    不再假裝沒事。狀態數約 +40%。
+  - 排序穩定：佇列元素改為 `(f, -g, state_id, state)`，f 相同先展開 g 大的，結果可重現；
+    `SearchState` 不再 `order=True`（舊版 f 相同的不同狀態會被視為相等）。
+  - Python 的 `GachaResult.total_cost` 改由路徑重算實際抽數；舊版在 `prefer_guaranteed=True` 時回報 `11.11` 這種加權值，與 .NET 版不一致。
+  - .NET：`GachaSlot` 新增 `ResultRarity`（目錄稀有度；`Rarity` 仍是儲存格 class 的上色帶，供前端使用），
+    `GachaSimulator` 新增測試用的 `HeuristicEnabled` 接縫與 `MinCostPerAdvance` / `MinCostPerCat`（internal）。
+- **重複稀有的解析與模擬**（`src/battle_cat_calc/parser.py`、`simulator.py`、`models.py`）：
+  - parser 以 `rowspan` 還原表格網格後才歸屬儲存格。舊版用「同一列的第 N 個 `<td>`」，會把相鄰軌道格子的內容讀成自己的，
+    導致 `A11`、`B100` 被誤判為重複稀有格（`B10`、`A100` 才是）。
+  - 結果欄箭頭（重複稀有的單抽落點）與必中欄箭頭（必中落點）分開存放為 `single_next_pos` 與 `next_pos`，
+    舊版後者會覆蓋前者，使單抽觸發重複時跳到十格之外（`B10` 存成 `21B`，網站標示是 `12A`）。新增 `original_next_pos`。
+  - 模擬器每一抽都更新「上一隻貓」。舊版只在被標記的重複稀有格更新，連續兩隻相同稀有貓時重複稀有從不觸發。
+  - 重複稀有格沒被觸發時改拿替換前的貓，必中也改用替換前的版本。
+  - 必中十連的前 10 抽改為照單抽規則逐抽走。舊版固定取同軌的 `pos+0..pos+9`，遇到重複稀有換軌後會收錯格子；
+    落點的 `is_track_switch` 也不再寫死為 `True`（前 10 抽有 1 次重複稀有時會留在原軌，例如 `1B → 12B`）。
+  - 啟發式的每格最低成本納入重複稀有的最大前進格數，維持 A* 的下界性質。
+  - 影響範例：`test_start_from_track_b` 的最佳成本由 24 變為 20（路徑經過 `B10 → 12A`）。
+- **測試**：移除把誤解析當標準答案的斷言（`A11` 原始貓、`B10.next_pos == 21B`），改為取自 HTML 原文的期望值，
+  並新增以兩種獨立 HTML 箭頭互相驗證的交叉測試（`TestDuplicateRareCrossCheck`）。
+- **.NET 版同步上述修正**（`dotnet/src`、`dotnet/tests`、`dotnet/client`）：
+  - `BCParser` 以內部 `CellGrid` 還原 `rowspan` 網格；`GachaSlot` 新增 `SingleNextPos`、`OriginalNextPos`，
+    結果欄與必中欄的箭頭分開存放。
+  - `GachaSimulator` 新增 `ResolveSingleRoll`：單抽依上一隻貓決定是否觸發重複稀有；必中十連的前 10 抽逐抽走；
+    起始格是未觸發的重複稀有格時用替換前的必中；`IsTrackSwitch` 依落點判斷；`_minCostPerAdvance` 納入重複稀有的前進格數。
+  - 測試比照 Python 版：期望值取自 HTML，新增重複稀有的快照測試、交叉驗證（`DuplicateRareSnapshotTests`）、
+    手工資料的邊界測試（`GachaSimulatorDuplicateRareTests`）與 `SlotDtoTests`。
+    `StartFromTrackB` 的最佳成本同樣由 24 變為 20，與 Python 版一致。
 - 修正多項 Markdown lint 格式規範，包含 MD032（清單前後空行）、MD040（程式碼區塊指定語言）、MD047（檔案結尾換行）與 MD060（表格分隔列空格）（`docs/api_reference.md`、`docs/design_logic.md`、`.agents/skills/gacha-simulation/SKILL.md`、`README.md`）。
 
 ### Changed
 
+- 重新研究轉蛋機制並更新 `docs/gacha_mechanics_zh_TW.md`、`docs/gacha_mechanics_player_guide_zh_TW.md`、
+  `docs/api_reference.md`、`docs/design_logic.md` 與兩個 skill：新增種子消耗規則（單抽 2 次、必中 1 次、重抽 1 次）、
+  區分 8.5 與 8.6 版的重複稀有替換方式、標示各規則的證據等級，並列出尚未驗證的項目與已知限制。
+  外部原頁多被出口代理封鎖，該部分取自搜尋摘要；fixture 實測的部分直接讀 HTML 驗證。
+  修正文件原有的錯誤：必中十一連並非必定換軌；B 軌重複稀有前進 2 格（`B10 → 12A`），移除無法驗證的 `102B → 103A` 範例。
+- **API 契約**：`GET /api/v1/tracks` 的每個 slot 新增 `singleNextPos`（重複稀有被觸發時單抽的落點，一般格為 `null`）。
+  `nextPos` 現在一律是必中十一連的落點。前端 `TrackSlotRow` 改用 `singleNextPos` 顯示重複稀有的落點徽章，
+  並同步 `e2e/fixtures.ts` 與 `dotnet/docs/architecture.md` 的範例。
 - 將仍適用的開發規則與領域問答流程整理至 `AGENTS.md`、`docs/agents/domain.md`，並將轉蛋模擬與 HTML 解析測試工作流集中至 `.agents/skills/`。
 
 ### Removed

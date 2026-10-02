@@ -272,7 +272,8 @@ class TestHeuristicOptimization:
         """設置 _heuristic 所需的預計算屬性。"""
         target_fs = frozenset(target_cats)
         _, sim._target_sorted_positions = sim._precompute_target_data(target_fs)
-        sim._min_cost_per_advance = 1.0
+        # 係數由 _scan_rules 從資料算出：_make_track 的必中前進 10 格、成本 10 → 每格 1.0；
+        # 一次必中拿 11 隻 → 每隻 10/11。
 
     def test_heuristic_all_collected(self):
         track_a = _make_track("A", 5)
@@ -288,8 +289,8 @@ class TestHeuristicOptimization:
         target = frozenset({"Cat1", "Cat2", "Cat3"})
         collected = frozenset()
         self._setup_heuristic(sim, target)
-        # uncollected=3, farthest nearest Cat3 at pos 3, dist=2 from pos 1 → max(3, 2)=3
-        assert sim._heuristic(collected, target, 3, 1) == 3
+        # uncollected=3 × 10/11 = 2.727；最遠的最近可得位置 Cat3@3，dist=2 × 1.0 → 取大者 2.727
+        assert sim._heuristic(collected, target, 3, 1) == pytest.approx(3 * 10 / 11)
 
     def test_heuristic_partial_collected(self):
         track_a = _make_track("A", 5)
@@ -297,7 +298,7 @@ class TestHeuristicOptimization:
         target = frozenset({"Cat1", "Cat2", "Cat3"})
         collected = frozenset({"Cat2"})
         self._setup_heuristic(sim, target)
-        # uncollected=2, Cat1@1 Cat3@3 from pos 1 → dist=2 → max(2, 2)=2
+        # uncollected=2 × 10/11 = 1.818；Cat1@1 Cat3@3 from pos 1 → dist=2 × 1.0 → 取大者 2
         assert sim._heuristic(collected, target, 3, 1) == 2
 
     def test_heuristic_distance_dominates(self):
@@ -318,8 +319,8 @@ class TestHeuristicOptimization:
         self._setup_heuristic(sim, target)
         collected = frozenset()
         # Cat5 at pos 5, current at pos 10 → Cat5 已不可達，但 bisect 找不到 >= 10 的位置
-        # heuristic 回傳 uncollected=1（distance=0 因為無可達位置）
-        assert sim._heuristic(collected, target, 1, 10) == 1
+        # heuristic 回傳 uncollected=1 × 10/11（distance=0 因為無可達位置）
+        assert sim._heuristic(collected, target, 1, 10) == pytest.approx(10 / 11)
 
 
 class TestLocalIdCounter:
@@ -368,11 +369,27 @@ class TestSearchStateSlots:
         with pytest.raises(AttributeError):
             state.cost = 999
 
-    def test_order_comparison(self):
-        """order=True 應以 priority 排序。"""
+    def test_ordering_lives_in_queue_not_on_state(self):
+        """排序鍵 (f, -g, state_id) 放在佇列元素裡，狀態本身不可比較，也不會因 f 相同而被視為相等。"""
         s1 = SearchState(priority=1.0, cost=1.0, pos_id=1, pos_track='A', collected=frozenset())
-        s2 = SearchState(priority=2.0, cost=2.0, pos_id=2, pos_track='A', collected=frozenset())
-        assert s1 < s2
+        s2 = SearchState(priority=1.0, cost=2.0, pos_id=2, pos_track='A', collected=frozenset())
+        with pytest.raises(TypeError):
+            s1 < s2  # noqa: B015
+        assert s1 != s2
+
+
+class TestDeterministicTieBreak:
+    """f 相同時以 (-g, state_id) 決定順序，結果必須可重現。"""
+
+    def test_same_query_yields_identical_path(self):
+        track_a = _make_track("A", 30)
+        track_b = _make_track("B", 30, track='B')
+        targets = {"Cat3", "Cat7", "Gua12"}
+        runs = [GachaSimulator(track_a, track_b).find_best_path(Position(1, 'A'), targets, 60) for _ in range(3)]
+        assert all(r is not None for r in runs)
+        first = [(s.source, s.target, s.unit, s.pool_id) for s in runs[0].path]
+        for r in runs[1:]:
+            assert [(s.source, s.target, s.unit, s.pool_id) for s in r.path] == first
 
 
 class TestTargetCatValidation:

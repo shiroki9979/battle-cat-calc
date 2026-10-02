@@ -30,11 +30,11 @@ class TestEnhancedModels:
         col_soup = BeautifulSoup(col_html, "html.parser")
         cols = [col_soup.td] # Just result column, no guaranteed
 
-        res, gua, pos, orig, dup, orig_gua = parser._extract_cols_data(cols)
-        
-        assert res == "CatName"
-        assert orig is None
-        assert dup is False
+        data = parser._extract_cols_data(cols)
+
+        assert data.result == "CatName"
+        assert data.original_result is None
+        assert data.is_duplicate is False
 
     def test_parser_duplicate_rare_slot(self):
         """測試重複稀有 (Duplicate Rare) 格子的解析。
@@ -57,16 +57,15 @@ class TestEnhancedModels:
         col_soup = BeautifulSoup(col_html, "html.parser")
         cols = [col_soup.td]
 
-        res, gua, pos, orig, dup, orig_gua = parser._extract_cols_data(cols)
-        
-        assert res == "Replacement"          # Result should be the last one
-        assert orig == "Original"            # Original should be the first one
-        assert dup is True                   # Should be flagged as duplicate
-        
-        # Check next pos extraction
-        assert pos is not None
-        assert pos.id == 21
-        assert pos.track == 'B'
+        data = parser._extract_cols_data(cols)
+
+        assert data.result == "Replacement"          # Result should be the last one
+        assert data.original_result == "Original"    # Original should be the first one
+        assert data.is_duplicate is True             # Should be flagged as duplicate
+
+        # 結果欄的箭頭是單抽落點；必中欄沒有資料，所以必中落點應為 None，兩者不可混用
+        assert data.result_pos == Position(21, 'B')
+        assert data.guaranteed_pos is None
 
     def test_filter_cat_names(self):
         """測試貓咪名稱過濾器。
@@ -138,9 +137,9 @@ class TestIntegration:
         # Step 1: last_rolled_rare 是 None (起始狀態)
         assert step1.context_data['last_rolled_rare'] is None
         
-        # Step 2: last_rolled_rare 仍為 None (Cat1/Cat2 不是重複稀有格)
-        # 注意：只有 is_duplicate_rare=True 或有 original_result 的格子才會更新此值
-        assert 'last_rolled_rare' in step2.context_data
+        # Step 2: last_rolled_rare 仍為 None。這組資料沒有任何重複稀有格，
+        # 所以沒有貓可能觸發重複，狀態不需要記住它們（見 SearchState.last_rolled_rare）。
+        assert step2.context_data['last_rolled_rare'] is None
         
         # Step 3: 驗證 context 存在
         assert 'last_rolled_rare' in step3.context_data

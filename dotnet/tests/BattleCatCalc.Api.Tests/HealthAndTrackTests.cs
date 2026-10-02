@@ -73,6 +73,7 @@ public class HealthAndTrackTests : IClassFixture<ApiTestFixture>
         Assert.True(firstSlot.TryGetProperty("result", out _));
         Assert.True(firstSlot.TryGetProperty("guaranteed", out _));
         Assert.True(firstSlot.TryGetProperty("isDuplicateRare", out _));
+        Assert.True(firstSlot.TryGetProperty("singleNextPos", out _));
     }
 
     #endregion

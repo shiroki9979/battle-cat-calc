@@ -14,7 +14,7 @@ import pytest
 from battle_cat_calc.parser import BCParser
 from battle_cat_calc.simulator import GachaSimulator
 from battle_cat_calc.analyzer import SeedAnalyzer
-from battle_cat_calc.models import Position, GachaPool
+from battle_cat_calc.models import Position, GachaPool, CatRarity
 
 
 FIXTURE_DIR = pathlib.Path(__file__).parent / "fixtures"
@@ -65,23 +65,73 @@ class TestParserSnapshot:
         ids = [s.id.id for s in parsed.track_b]
         assert ids == list(range(1, 101))
 
-    def test_duplicate_rare_slot_a11(self, parsed):
-        """A11 應為重複稀有格（original=侏羅貓, result=明日香貓, next=21B）。"""
-        slot = parsed.track_a.get_slot(11)
-        assert slot is not None
-        assert slot.is_duplicate_rare is True
-        assert slot.original_result == "侏羅貓"
-        assert slot.result == "明日香貓"
-        assert slot.next_pos == Position(21, 'B')
+    # 以下重複稀有的期望值取自 HTML 原文（<tr> 以 0 起算；欄位以 rowspan 還原後的網格為準）：
+    #   第 19 列  B9 的貓                  「拳擊手貓」
+    #   第 21 列  B10 替換前               「拳擊手貓」 必中「<- 21A 白夜姬零」
+    #   第 22 列  B10 替換後               「<- 12A 侏羅貓」 必中「EVA初號機 -> 21B」
+    #   第 21~23 列 A11（3 列只是配合 B10 的版面拉伸）結果欄只有第 23 列的「明日香貓」
 
     def test_duplicate_rare_slot_b10(self, parsed):
-        """B10 應為重複稀有格。"""
+        """B10 是同軌連續重複：B9、B10 的原始貓都是拳擊手貓，被替換成侏羅貓。"""
+        assert parsed.track_b.get_slot(9).result == "拳擊手貓"
+
         slot = parsed.track_b.get_slot(10)
-        assert slot is not None
         assert slot.is_duplicate_rare is True
         assert slot.original_result == "拳擊手貓"
         assert slot.result == "侏羅貓"
+
+    def test_duplicate_rare_slot_b10_arrows(self, parsed):
+        """B10 的單抽落點（結果欄 <- 12A）與必中落點（必中欄）是不同的箭頭，不可混用。"""
+        slot = parsed.track_b.get_slot(10)
+        assert slot.single_next_pos == Position(12, 'A')
+        assert slot.next_pos == Position(21, 'B')           # 替換後：EVA初號機 -> 21B
+        assert slot.original_next_pos == Position(21, 'A')  # 替換前：白夜姬零 <- 21A
+        assert slot.original_guaranteed == "白夜姬零"
+        assert slot.guaranteed == "EVA初號機"
+
+    def test_slot_a11_is_not_duplicate(self, parsed):
+        """A11 佔 3 列只是版面拉伸，結果欄只有「明日香貓」，不是重複稀有格。
+
+        第 22 列的「侏羅貓」是 B10 的替換結果；舊版 parser 誤把它當成 A11 的原始貓。
+        """
+        slot = parsed.track_a.get_slot(11)
+        assert slot.is_duplicate_rare is False
+        assert slot.original_result is None
+        assert slot.result == "明日香貓"
+        assert slot.guaranteed == "EVA初號機"
         assert slot.next_pos == Position(21, 'B')
+        assert slot.single_next_pos is None
+
+    def test_end_of_table_duplicate_a100(self, parsed):
+        """A100：A99、A100 的原始貓都是侏羅貓，替換成薰貓；HTML 標 <?>，落點超出表格範圍。"""
+        assert parsed.track_a.get_slot(99).result == "侏羅貓"
+
+        slot = parsed.track_a.get_slot(100)
+        assert slot.is_duplicate_rare is True
+        assert slot.original_result == "侏羅貓"
+        assert slot.result == "薰貓"
+        assert slot.single_next_pos is None
+
+    def test_slot_b100_is_not_duplicate(self, parsed):
+        """B100 的結果欄只有「魔劍士貓」；「薰貓」是 A100 的替換結果，舊版 parser 誤讀進來。"""
+        slot = parsed.track_b.get_slot(100)
+        assert slot.is_duplicate_rare is False
+        assert slot.original_result is None
+        assert slot.result == "魔劍士貓"
+
+    def test_duplicate_rare_slots_in_fixture(self, parsed):
+        """整份 fixture 只有 B10 與 A100 兩個重複稀有格。
+
+        HTML 中佔 3 列的格子有 A11、B10、A100、B100 四個，其中 A11、B100 只是配合
+        相鄰重複稀有格的版面拉伸（見上方各測試）。
+        """
+        flagged = {
+            (s.id.id, s.id.track)
+            for track in (parsed.track_a, parsed.track_b)
+            for s in track
+            if s.is_duplicate_rare
+        }
+        assert flagged == {(10, 'B'), (100, 'A')}
 
     def test_specific_slots_spot_check(self, parsed):
         """抽樣驗證幾個已知位置的解析正確性。"""
@@ -150,6 +200,52 @@ class TestSimulatorSnapshot:
         assert result is not None
         assert result.total_cost == 4
 
+    # ── 重複稀有（B9、B10 的原始貓都是拳擊手貓；HTML 標示 B10 單抽落在 12A）──
+
+    def test_duplicate_rare_single_roll_follows_site_arrow(self, sim):
+        """從 B9 連抽：B10 觸發重複稀有，拿到侏羅貓並照網站箭頭落在 12A（換軌且前進 2 格）。
+
+        舊版沒有記住 B9 的貓，不會觸發重複，走到 11B。
+        """
+        result = sim.find_best_path(Position(9, 'B'), {"侏羅貓"}, 5)
+        assert result is not None
+        assert result.total_cost == 2
+
+        first, second = result.path
+        assert (first.source, first.target, first.unit) == (Position(9, 'B'), Position(10, 'B'), "拳擊手貓")
+        assert first.is_duplicate_rare is False
+        assert (second.source, second.target, second.unit) == (Position(10, 'B'), Position(12, 'A'), "侏羅貓")
+        assert second.is_duplicate_rare is True
+        assert second.is_track_switch is True
+
+    def test_duplicate_rare_not_triggered_gives_original_cat(self, sim):
+        """直接站在 B10（上一隻不是拳擊手貓）不會觸發重複：拿到替換前的拳擊手貓，同軌前進 1 格。"""
+        result = sim.find_best_path(Position(10, 'B'), {"拳擊手貓"}, 2)
+        assert result is not None
+        assert result.total_cost == 1
+        step, = result.path
+        assert (step.target, step.unit, step.is_duplicate_rare) == (Position(11, 'B'), "拳擊手貓", False)
+
+        # 替換後的侏羅貓在沒觸發時拿不到
+        assert sim.find_best_path(Position(10, 'B'), {"侏羅貓"}, 1) is None
+
+    def test_guaranteed_window_with_duplicate_stays_on_track(self, sim):
+        """B1 的必中十連包含 B10 的重複稀有（奇數次），落在 12B 而不是換軌。
+
+        HTML：1B 必中欄「白夜姬零 -> 12B」。
+        """
+        result = sim.find_best_path(Position(1, 'B'), {"白夜姬零"}, 10)
+        assert result is not None
+        step, = result.path
+        assert step.is_guaranteed is True
+        assert step.target == Position(12, 'B')
+        assert step.is_track_switch is False
+
+    def test_heuristic_rate_accounts_for_duplicate_advance(self, sim):
+        """重複稀有單抽前進 2 格，啟發式的每格最低成本不可高於 0.5，否則不再是下界。"""
+        sim.find_best_path(Position(1, 'A'), {"貓咪陰陽師"}, 2)
+        assert sim._min_cost_per_advance <= 0.5
+
     def test_beam_search_snapshot(self, sim):
         """Beam Search 在此快照上應找到相同或相近的結果。"""
         result = sim.find_best_path(
@@ -206,6 +302,106 @@ class TestSimulatorSnapshot:
         # 不應拋出例外
         json_str = json.dumps(d, ensure_ascii=False)
         assert "第10使徒" in json_str
+
+
+# ── 重複稀有規則的交叉驗證 ─────────────────────────────────
+
+class TestDuplicateRareCrossCheck:
+    """兩種彼此獨立的 HTML 箭頭必須互相一致，用來檢驗模擬器的單抽轉換規則。
+
+    - 照單抽規則（含結果欄的重複稀有落點）走 10 抽，再讓必中超激消耗 1 個亂數：
+      A_n 的亂數編號是奇數、B_n 是偶數，所以 A_n → B_n，B_n → A_(n+1)。
+    - 與表格「必中欄」的箭頭比對（例如 1A → 11B、1B → 12B、12A → 22B）。
+
+    前者靠結果欄的箭頭（B10 → 12A），後者靠必中欄的箭頭，兩者互不引用。
+    若重複稀有的落點判斷錯誤，所有視窗包含 B10 的起點（B1~B10）都會對不上。
+    此測試使用 _resolve_single_roll（模擬器沒有對應的公開介面）。
+    """
+
+    @pytest.mark.parametrize("fixture_name", ["parsed", "parsed_1020"])
+    def test_ten_roll_walk_lands_where_table_says(self, request, fixture_name):
+        data = request.getfixturevalue(fixture_name)
+        sim = GachaSimulator(data.track_a, data.track_b)
+        tracks = {'A': data.track_a, 'B': data.track_b}
+
+        checked, mismatches = 0, []
+        for track in tracks.values():
+            for slot in track:
+                if not isinstance(slot.next_pos, Position):
+                    continue  # 落點超出表格範圍
+                # 表格的必中欄假設起始格自己的重複稀有被觸發
+                last = slot.original_result if slot.is_duplicate_rare else None
+                pos = slot.id
+                for _ in range(10):
+                    current = tracks[pos.track].get_slot(pos.id)
+                    outcome = sim._resolve_single_roll(current, last) if current else None
+                    if outcome is None:
+                        break
+                    last, pos = outcome.unit, outcome.next_pos
+                else:
+                    expected = Position(pos.id, 'B') if pos.track == 'A' else Position(pos.id + 1, 'A')
+                    checked += 1
+                    if expected != slot.next_pos:
+                        mismatches.append((slot.id, expected, slot.next_pos))
+
+        assert mismatches == []
+        assert checked >= 150  # 避免因為視窗全被略過而空轉通過
+
+
+# ── 最優性交叉驗證：A* 必須與關閉啟發式的精確搜尋一致 ────────
+
+class TestOptimalityCrossCheck:
+    """啟發式一旦高估，A* 就可能回傳較差的解；用 h=0 的 Dijkstra 當基準做隨機抽查。"""
+
+    @staticmethod
+    def _exact(sim, *args, **kwargs):
+        original = sim._heuristic
+        sim._heuristic = lambda *_: 0.0
+        try:
+            return sim.find_best_path(*args, **kwargs)
+        finally:
+            sim._heuristic = original
+
+    def _check(self, sim, cats, trials, seed):
+        import random
+        rng = random.Random(seed)
+        cats = sorted(cats)
+        for _ in range(trials):
+            targets = set(rng.sample(cats, rng.randint(1, 3)))
+            start = Position(rng.randint(1, 60), rng.choice('AB'))
+            astar = sim.find_best_path(start, targets, 80)
+            exact = self._exact(sim, start, targets, 80)
+            assert (astar and astar.total_cost) == (exact and exact.total_cost), (start, targets)
+
+    def test_single_pool(self, parsed):
+        self._check(GachaSimulator(parsed.track_a, parsed.track_b), parsed.get_all_cats(), trials=40, seed=11)
+
+    def test_multi_pool(self, multi_pool_sim, parsed, parsed_1020):
+        self._check(multi_pool_sim, parsed.get_all_cats() | parsed_1020.get_all_cats(), trials=30, seed=12)
+
+
+# ── 稀有度：取自頁面目錄，不是儲存格的 CSS class ──────────────
+
+class TestRarityFromCatalog:
+    """HTML 目錄（#find_select）：Rare 29 隻、Super 20、Uber 7、Legendary 1。
+    儲存格 class 是 godfat 依慶典費率上色的「稀有度帶」：拳擊手貓的 class 是 supa_fest、
+    貓咪番長是 uber_fest，目錄卻分別是 Rare、Super。遊戲的連續重複判定要看目錄。"""
+
+    def test_result_rarity_follows_catalog_not_css_class(self, parsed):
+        assert parsed.track_b.get_slot(9).result == "拳擊手貓"
+        assert parsed.track_b.get_slot(9).rarity is CatRarity.RARE          # class: supa_fest
+        assert parsed.track_a.get_slot(13).result == "貓咪番長"
+        assert parsed.track_a.get_slot(13).rarity is CatRarity.SUPER_RARE   # class: uber_fest
+        assert parsed.track_a.get_slot(1).rarity is CatRarity.RARE          # 貓咪陰陽師
+        assert parsed.track_a.get_slot(18).rarity is CatRarity.UBER_RARE    # EVA零號機
+
+    def test_guaranteed_rarity_from_catalog(self, parsed):
+        assert parsed.track_a.get_slot(1).guaranteed == "第10使徒"
+        assert parsed.track_a.get_slot(1).guaranteed_rarity is CatRarity.UBER_RARE
+
+    def test_duplicate_rare_slots_are_rare(self, parsed):
+        for slot in (parsed.track_b.get_slot(10), parsed.track_a.get_slot(100)):
+            assert slot.is_duplicate_rare and slot.rarity is CatRarity.RARE
 
 
 # ── Analyzer 快照驗證 ──────────────────────────────────────
@@ -361,12 +557,22 @@ class TestMultiPoolSnapshot:
         assert result.pools_used == {"1019", "1020"}
 
     def test_start_from_track_b(self, multi_pool_sim):
-        """從 B 軌起始尋找「第9使徒」（1020獨佔），cost=24。"""
+        """從 B 軌起始尋找「第9使徒」（1020獨佔），cost=20。
+
+        最佳路徑：單抽 B1~B10（B9 抽到拳擊手貓，B10 觸發重複稀有，落在 12A，1 抽前進 2 格），
+        再於 1020 的 12A 做必中十連。1020 的 12A 必中欄為「第9使徒 -> 22B」。
+        舊版漏掉重複稀有的換軌，只能走兩次必中而得到 24。
+        """
         result = multi_pool_sim.find_best_path(
             Position(1, 'B'), {"第9使徒"}, 30,
         )
         assert result is not None
-        assert result.total_cost == 24
+        assert result.total_cost == 20
+
+        *singles, last = result.path
+        assert last.is_guaranteed is True
+        assert (last.pool_id, last.source, last.target) == ("1020", Position(12, 'A'), Position(22, 'B'))
+        assert any(s.is_duplicate_rare and s.target == Position(12, 'A') for s in singles)
 
     def test_beam_search_multi_pool(self, multi_pool_sim):
         """Beam Search 在多池模式下應仍能找到結果。"""

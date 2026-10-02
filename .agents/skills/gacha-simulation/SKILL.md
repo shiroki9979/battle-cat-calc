@@ -29,7 +29,7 @@ description: "修改或擴展 GachaSimulator 演算法的工作流。Use when: �
 
 | 欄位 | 型別 | 用途 |
 | --- | --- | --- |
-| `priority` | `float` | A* f-value (`cost + heuristic`)，PQ 排序依據 |
+| `priority` | `float` | A* f-value (`cost + heuristic`)；佇列元素為 `(f, -g, state_id, state)`，排序鍵不在狀態上 |
 | `cost` | `float` | 累計抽卡成本（g-value） |
 | `pos_id` | `int` | 當前位置 ID |
 | `pos_track` | `str` | 當前軌道 `'A'` / `'B'` |
@@ -37,7 +37,7 @@ description: "修改或擴展 GachaSimulator 演算法的工作流。Use when: �
 | `state_id` | `int` | 唯一狀態 ID（延遲路徑建構用） |
 | `parent_id` | `Optional[int]` | 父狀態 ID（回溯路徑用） |
 | `last_step` | `Optional[GachaStep]` | 本次操作資訊 |
-| `last_rolled_rare` | `Optional[str]` | 上次抽到的稀有貓（跨池重複稀有偵測） |
+| `last_rolled_rare` | `Optional[str]` | 上一抽實際拿到的貓，只記目錄標為稀有的貓（無目錄時記曾被替換掉的貓）；跨池重複稀有偵測 |
 
 ### 2. 確認不變量
 
@@ -49,9 +49,15 @@ description: "修改或擴展 GachaSimulator 演算法的工作流。Use when: �
 4. **SearchState 不可變** — frozen dataclass，`collected` 使用 `frozenset`
 5. **延遲路徑鏈完整** — 每個狀態的 `parent_id` 鏈可追溯至起始狀態（`None`）
 6. **Beam Search 祖先保留** — 剪枝 `state_map` 時必須保留 PQ 中所有狀態的祖先鏈
-7. **跨池 last_rolled_rare** — 稀有貓追蹤跨池持續，用於偵測跨池重複稀有
+7. **跨池 last_rolled_rare** — 上一抽拿到的貓跨池持續，用於偵測跨池重複稀有；每一抽（含必中超激）都要更新，
+   不能只在重複稀有格更新，否則連續兩次抽到同一隻稀有貓時永遠不會觸發
 8. **保底成本一致** — 同池所有路徑使用相同 `pool.guaranteed_cost`
-9. **啟發式可容許性** — `heuristic(s) <= actual_remaining_cost(s)`，保證 A* 最優解
+9. **啟發式可容許性** — `heuristic(s) <= actual_remaining_cost(s)`，保證 A* 最優解。兩個係數由 `_scan_rules`
+   從資料算出：每隻貓 `min(1, guaranteed_cost / 11)`、每格 `min(1 / 最大單抽前進格數, guaranteed_cost / 最大必中前進格數)`；
+   新增任何「一抽拿更多」或「一抽走更遠」的規則都要重算，`TestOptimalityCrossCheck` 會以 h=0 的 Dijkstra 比對
+10. **未標記重複拒走** — 一般格而上一隻就是這格的貓時 `_resolve_single_roll` 回傳 `None`；不要改成「拿原始貓繼續走」
+11. **回報整數成本** — `GachaResult.total_cost` 由 `_actual_cost(path)` 重算，`prefer_guaranteed` 的 1.11 只用於排序
+12. **排序穩定** — 佇列元素 `(f, -g, state_id, state)`，f 相同先展開 g 大的，結果可重現
 
 ### 3. 執行修改
 
@@ -114,7 +120,11 @@ Beam Search 觸發條件：`len(pq) > beam_width * 2` → 保留最佳 `beam_wid
 
 ## 常見陷阱
 
-- 新增 `SearchState` 欄位忘記設 `compare=False` → 破壞 PQ 排序行為
+- 把排序鍵放回 `SearchState`（`order=True`）→ f 相同的不同狀態會被視為相等；排序鍵只放在佇列元素
 - 修改啟發式使其不可容許（高估）→ A* 不再保證最優解
 - Beam Search 剪枝未保留祖先鏈 → 路徑回溯時 `KeyError`
 - 保底分支未檢查 10 個連續有效 slot → 無效狀態進入 PQ
+- 保底視窗固定取同軌的 `pos+0..pos+9` → 前 10 抽遇到重複稀有會換軌，必須照單抽規則（`_resolve_single_roll`）逐抽走
+- 把必中欄的 `next_pos` 當成重複稀有的單抽落點 → 單抽會跳到十格之外；單抽落點是 `single_next_pos`
+- 重複稀有格沒被觸發卻拿替換後的貓 → 未觸發時要拿 `original_result`，必中用 `original_guaranteed` / `original_next_pos`
+- 新增會讓單抽一次前進多格的規則 → 同步更新 `_min_cost_per_advance`，否則啟發式不再是下界

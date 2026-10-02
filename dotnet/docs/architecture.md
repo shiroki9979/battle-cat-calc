@@ -249,7 +249,7 @@ sequenceDiagram
   "seed": "2127986414",
   "eventId": "1019",
   "trackA": [
-    { "id": 1, "track": "A", "result": "貓咪陰陽師", "guaranteed": "第10使徒", "nextPos": { "id": 2, "track": "A" }, "isDuplicateRare": false }
+    { "id": 1, "track": "A", "result": "貓咪陰陽師", "guaranteed": "第10使徒", "nextPos": { "id": 11, "track": "B" }, "singleNextPos": null, "isDuplicateRare": false }
   ],
   "trackB": [ ... ]
 }

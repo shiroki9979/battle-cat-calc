@@ -17,18 +17,18 @@ export const MOCK_TRACK_RESPONSE: TrackResponse = {
   seed: '12345',
   eventId: '1019',
   trackA: [
-    { id: 1, track: 'A', result: 'Archer Cat', guaranteed: 'Bahamut Cat', nextPos: null, isDuplicateRare: false, rarity: 'Rare', guaranteedRarity: 'UberRare' },
-    { id: 2, track: 'A', result: 'Swordsman Cat', guaranteed: 'Ururun Wolf', nextPos: null, isDuplicateRare: false, rarity: 'Rare', guaranteedRarity: 'UberRare' },
-    { id: 3, track: 'A', result: 'Archer Cat', guaranteed: 'Catman', nextPos: { id: 3, track: 'B' }, isDuplicateRare: true, rarity: 'Rare', guaranteedRarity: 'UberRare' },
-    { id: 4, track: 'A', result: 'Cat Machine', guaranteed: 'Cat Machine', nextPos: null, isDuplicateRare: false, rarity: 'UberRare', guaranteedRarity: 'UberRare' },
-    { id: 5, track: 'A', result: 'Jizo', guaranteed: 'Jizo', nextPos: null, isDuplicateRare: false, rarity: 'UberRare', guaranteedRarity: 'UberRare' },
+    { id: 1, track: 'A', result: 'Archer Cat', guaranteed: 'Bahamut Cat', nextPos: null, singleNextPos: null, isDuplicateRare: false, rarity: 'Rare', guaranteedRarity: 'UberRare' },
+    { id: 2, track: 'A', result: 'Swordsman Cat', guaranteed: 'Ururun Wolf', nextPos: null, singleNextPos: null, isDuplicateRare: false, rarity: 'Rare', guaranteedRarity: 'UberRare' },
+    { id: 3, track: 'A', result: 'Archer Cat', guaranteed: 'Catman', nextPos: null, singleNextPos: { id: 3, track: 'B' }, isDuplicateRare: true, rarity: 'Rare', guaranteedRarity: 'UberRare' },
+    { id: 4, track: 'A', result: 'Cat Machine', guaranteed: 'Cat Machine', nextPos: null, singleNextPos: null, isDuplicateRare: false, rarity: 'UberRare', guaranteedRarity: 'UberRare' },
+    { id: 5, track: 'A', result: 'Jizo', guaranteed: 'Jizo', nextPos: null, singleNextPos: null, isDuplicateRare: false, rarity: 'UberRare', guaranteedRarity: 'UberRare' },
   ],
   trackB: [
-    { id: 1, track: 'B', result: 'Gross Cat', guaranteed: 'Tecoluga', nextPos: null, isDuplicateRare: false, rarity: 'Rare', guaranteedRarity: 'UberRare' },
-    { id: 2, track: 'B', result: 'Cow Cat', guaranteed: 'Togeluga', nextPos: null, isDuplicateRare: false, rarity: 'Rare', guaranteedRarity: 'UberRare' },
-    { id: 3, track: 'B', result: 'Jizo', guaranteed: 'Jizo', nextPos: null, isDuplicateRare: false, rarity: 'UberRare', guaranteedRarity: 'UberRare' },
-    { id: 4, track: 'B', result: 'Witch Cat', guaranteed: 'Witch Cat', nextPos: null, isDuplicateRare: false, rarity: 'SuperRare', guaranteedRarity: 'SuperRare' },
-    { id: 5, track: 'B', result: 'Archer Cat', guaranteed: 'Archer Cat', nextPos: null, isDuplicateRare: false, rarity: 'Rare', guaranteedRarity: 'Rare' },
+    { id: 1, track: 'B', result: 'Gross Cat', guaranteed: 'Tecoluga', nextPos: null, singleNextPos: null, isDuplicateRare: false, rarity: 'Rare', guaranteedRarity: 'UberRare' },
+    { id: 2, track: 'B', result: 'Cow Cat', guaranteed: 'Togeluga', nextPos: null, singleNextPos: null, isDuplicateRare: false, rarity: 'Rare', guaranteedRarity: 'UberRare' },
+    { id: 3, track: 'B', result: 'Jizo', guaranteed: 'Jizo', nextPos: null, singleNextPos: null, isDuplicateRare: false, rarity: 'UberRare', guaranteedRarity: 'UberRare' },
+    { id: 4, track: 'B', result: 'Witch Cat', guaranteed: 'Witch Cat', nextPos: null, singleNextPos: null, isDuplicateRare: false, rarity: 'SuperRare', guaranteedRarity: 'SuperRare' },
+    { id: 5, track: 'B', result: 'Archer Cat', guaranteed: 'Archer Cat', nextPos: null, singleNextPos: null, isDuplicateRare: false, rarity: 'Rare', guaranteedRarity: 'Rare' },
   ],
 };
 
