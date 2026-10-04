@@ -1,6 +1,9 @@
 <!-- markdownlint-disable MD024 -->
 # API 參考文檔 (API Reference)
 
+Created: 2026-02-01
+Last updated: 2026-10-04
+
 本文件提供 `battle_cat_calc` 套件核心類別的 API 說明。
 
 ---
@@ -177,6 +180,30 @@ def find_best_path(
 | `progress_callback` | `Optional[Callable]` | 否 | `None` | 進度回調，傳入 `(current_cost, states_processed, queue_size)` |
 | `beam_width` | `Optional[int]` | 否 | `None` | Beam Search 寬度限制。`None` 為完整 A* 搜尋。建議值：10000–50000。使用 Beam Search 可能無法找到最佳解 |
 | `prefer_guaranteed` | `bool` | 否 | `False` | 是否偏好十連抽。為 `True` 時單抽在搜尋中以 1.11 計價，讓演算法在成本相近時優先選擇十連抽；回傳的 `total_cost` 仍是實際抽數 |
+
+上述簽名與 1.11 加權描述的是 **Python 版**。C# 版自 2026-10-03 起使用不同策略：
+
+```csharp
+GachaResult? FindBestPath(Position start, FrozenSet<string> targets, int maxRolls = 1000);
+
+GachaResult? FindBestPath(
+    Position start,
+    FrozenSet<string> targets,
+    int maxRolls,
+    int? beamWidth,
+    bool preferGuaranteed,
+    Action<float, int, int>? progressCallback = null,
+    IReadOnlyDictionary<string, int>? salvageValues = null);
+```
+
+C# 一般介面與 `POST /api/v1/simulate` 預設啟用「實際成本最小，同成本必中次數最多」。擴充介面設定
+`preferGuaranteed=false` 可只要求最低成本；設定 `true` 不增加單抽搜尋成本，也不改變實際成本上限。
+`beamWidth=null` 的完整 A* 保證兩項優先順序；指定 Beam 寬度時僅回傳近似候選。
+詳細判定與終止條件見[設計邏輯：C# 最低成本下盡量多做必中十一連](design_logic.md#c最低成本下盡量多做必中十一連)。
+
+`salvageValues` 提供每個實際可能取得角色的分解價值。提供時同成本先最大化分解價值，再依 `preferGuaranteed` 比較必中次數；
+單抽及十一連全部 11 隻均計分。`GachaResult.TotalSalvageValue` 包含保留的目標角色，需另外扣除保留角色的價值，
+未提供價值表時為 0。HTTP 端點目前沿用未配置價值表的成本與必中策略。
 
 **回傳值**: `Optional[GachaResult]`
 

@@ -1,5 +1,8 @@
 # 模擬器設計邏輯 (Simulator Design Logic)
 
+Created: 2026-01-31
+Last updated: 2026-10-04
+
 ## 核心演算法
 
 模擬器使用 **A\* 演算法**（可容許啟發式 + 支配性剪枝）搜尋達成目標的「最小花費」路徑。
@@ -20,6 +23,8 @@
 
 - **Priority**: A* 的 f 值 (f = g + h)。
 - **Cost**: 目前累積的抽卡次數 (g 值)。
+- **GuaranteedCount（C#）**: 目前累積的必中十一連次數，用於同成本方案的比較與剪枝。
+- **SalvageValue（C#）**: 配置分解價值時，累計所有實際取得角色的價值，同成本下先比較此值。
 - **Position**: 目前所在的格子 (ID 與 Track)。
 - **Collected**: 目前已收集到的目標貓咪集合 (frozenset)。
 - **state_id**: 唯一狀態識別碼（用於延遲路徑建構）。
@@ -76,20 +81,61 @@
 
 ### 回報的成本
 
-`prefer_guaranteed=True` 時單抽在搜尋中以 1.11 計價，只用來讓「10 單抽」排在「1 次必中」之後；
-`GachaResult.total_cost` 一律由路徑重算實際抽數（單抽 1、必中 `guaranteed_cost`），與 .NET 版一致。
+成本一律按單抽 1、必中 `guaranteed_cost` 計算，結果再由完整路徑重算。C# 的搜尋成本與回報成本一致。
+
+Python 的 `prefer_guaranteed=True` 仍使用單抽 1.11 的舊加權，因此可能選到實際成本較高的路線。
+2026-10-03 的 C# 搜尋已改為下節的兩項優先順序；本次未修改或執行 Python 搜尋。
+
+### C#：最低成本下盡量多做必中十一連
+
+C# `GachaSimulator.FindBestPath` 的一般介面及 HTTP 模擬端點，預設採下列優先順序：
+
+1. 收集所有目標的**實際總成本最小**。
+2. 在最低成本方案中，**必中十一連次數最多**。
+
+擴充介面的 `preferGuaranteed=true` 啟用此策略，`false` 只要求成本最小。先比較成本，不能因為必中次數較多就接受更貴的路線；
+成本上限也按實際成本計算。不同池的必中成本可以不同，因此直接最大化必中次數，不以最少單抽代替。
+
+`SearchState.GuaranteedCount` 記錄沿途必中次數。同位置、軌道、上一抽稀有與收集集合的支配性判定，
+先比較成本；成本相同時，只有必中次數不少於另一條路線的狀態才能將其剪枝。
+
+第一個完成目標的狀態確立最低成本 `C`，但不能立即證明其中必中次數最多。偏好啟用時繼續處理 `f <= C` 的候選，
+逐一比較完成目標的必中次數；當佇列最小的 `f > C` 時結束。啟發式是成本下界，因此更低成本或同成本的方案不會被提早略過。
+後續分支上限同步縮到 `C`，不再展開超過最低成本的操作。
+
+完整 A*（`beamWidth=null`）保證上述兩項優先順序在模型內成立。Beam Search 會丟棄候選，仍不能保證最低成本或同成本下最多必中；
+剪枝時除佇列祖先外，也保留目前最佳完成路線的祖先鏈，讓結果能完整回溯。
+
+此處只計算目前模型的**必中十一連**，未加入一般十一連或活動獎品價值。
+
+### C#：同成本下最大化分解素材
+
+擴充介面可提供 `salvageValues`（角色名稱對應分解價值）。提供時優先順序為：**總成本最小 → 總分解價值最大 → 必中次數最多**；
+最後一項仍由 `preferGuaranteed` 控制。未提供時維持上述成本與必中策略，HTTP 端點目前未配置分解價值。
+
+單抽計入實際取得角色；必中逐一計入前 10 隻及第 11 隻，重複角色每次都增加價值。
+`GachaResult.TotalSalvageValue` 是全部角色的總價值，尚未扣除保留角色。若所有方案都保留相同清單各一隻，
+扣除的是相同常數，因此最大化總值也等同最大化其餘可分解角色的素材。帳號持有情況或額外保留數量需另外計算。
+
+同成本前綴的支配性判定先比較 `SalvageValue`，再比較必中次數；價值較低的前綴不能剪掉價值較高的前綴。
+有配置分解價值時，即使 `preferGuaranteed=false`，仍繼續處理全部 `f <= C` 的候選以找到最高素材收益。
+啟發式仍只估計成本下界，不把分解價值當成成本折抵；完整 A* 保證上述順序，Beam 仍是近似結果。
 
 ## 流程圖
 
 ```mermaid
 graph TD
     Start([開始狀態 Start State]) --> PQ{Priority Queue}
-    PQ -->|取出最小 Cost 狀態| CheckGoal{是否收集所有目標?}
-    
-    CheckGoal -- Yes --> Found([回傳最佳路徑])
+    PQ -->|取出最小 f 狀態| CheckBound{已有完成路線且 f 超過其成本?}
+    CheckBound -- Yes --> Found([回傳最佳路徑])
+    CheckBound -- No --> CheckGoal{是否收集所有目標?}
+    CheckGoal -- Yes --> UpdateGoal[更新最低成本與同成本必中次數]
+    UpdateGoal --> Preference{C# 同成本偏好必中?}
+    Preference -- Yes --> PQ
+    Preference -- No --> Found
     CheckGoal -- No --> CheckVisited{是否已訪問過?}
     
-    CheckVisited -- Yes (且 Cost 更高) --> PQ
+    CheckVisited -- Yes (被支配) --> PQ
     CheckVisited -- No --> Expand[展開分支]
     
     Expand --> SingleRoll["單抽分支 (Cost +1)"]

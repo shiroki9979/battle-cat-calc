@@ -1,5 +1,8 @@
 # 貓咪大戰爭抽卡機制詳解 (Battle Cats Gacha Mechanics)
 
+Created: 2026-02-01
+Last updated: 2026-10-04
+
 本文件詳細說明《貓咪大戰爭》的轉蛋（Gacha）核心機制，以及本專案模擬器如何處理這些規則。
 
 ## 1. 核心原理：種子 (Seed)
@@ -123,6 +126,18 @@
   - 舊版文件的範例「`102B` 抽完跳到 `103A`」與 fixture 實測（B 軌重複稀有前進 2 格）不符，
     也無法找到來源驗證，已移除。
 
+### 3.4 角色交換 NP
+
+PONOS 官方說明確認，貯藏庫中的角色可交換為 NP，用於解放與強化本能。
+官方正文未列稀有度交換數值。[PONOS 本能說明](https://ponosgames.com/information/appli/battlecats/instinct/index.html)
+
+稀有 5、激稀有 15、超激 50、傳說 150 NP，為攻略及社群來源一致支持的數值；
+本次未找到直接列出這些數值的官方資料，不能標為官方確認。
+[Game8 NP 表](https://game8.jp/battlecats/467407)、[Battle Cats Wiki 傳說角色說明](https://battle-cats.fandom.com/wiki/Category:Legend_Rare_Cats)
+
+搜尋的 NP 總價值與實際可分解收入不同：需先扣除要保留角色的價值。
+若所有方案都保留相同清單各一隻，這項扣除是固定值，同成本最大化總價值即可比較剩餘可分解收益。
+
 ## 4. 模擬器運作邏輯
 
 本模擬器的 `GachaSimulator` 類別使用 **Dijkstra 演算法** 來尋找最佳路徑，它會考慮上述所有規則：
@@ -201,8 +216,9 @@
   遊戲會觸發重複，但資料中沒有替換結果。模擬器會**偵測並拒走**這條路（不給出會分岔的計畫），
   代價是可能錯過一條真實存在、更便宜的路。偵測依賴目錄的稀有度；兩份 fixture 的稀有陣容相同，
   336 條路徑掃描 0 命中，但合作池與一般池的稀有陣容不同時就會發生。
-- **Python 版與 .NET 版（`dotnet/`）行為一致**：兩邊的 parser 與 simulator 都已套用上述規則，
-  兩邊的測試以同一批 fixture 驗證，`StartFromTrackB` 的最佳成本都是 20。修改規則時兩邊要一起改。
+- **Python 版與 .NET 版（`dotnet/`）的遊戲狀態轉移一致**：兩邊的 parser 與 simulator 都已套用上述規則，
+  兩邊的測試以同一批 fixture 驗證，`StartFromTrackB` 的最佳成本都是 20。修改遊戲規則時兩邊要一起改。
+  搜尋偏好有所區別：C# 已改為最低成本下最大化必中次數，Python 保留舊加權，見[設計邏輯](design_logic.md#c最低成本下盡量多做必中十一連)。
 
 要補齊這些項目，最直接的來源是 godfat 的 `battle-cats-rolls` 原始碼與說明頁原文。
 
