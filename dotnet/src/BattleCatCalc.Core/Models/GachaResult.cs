@@ -13,16 +13,20 @@ public sealed class GachaResult
         IReadOnlyList<GachaStep> path,
         FrozenSet<string> collected,
         Position? startPos = null,
-        FrozenSet<string>? targetCats = null)
+        FrozenSet<string>? targetCats = null,
+        int totalSalvageValue = 0)
     {
         TotalCost = totalCost;
         Path = path;
         Collected = collected;
         StartPos = startPos;
         TargetCats = targetCats;
+        TotalSalvageValue = totalSalvageValue;
     }
 
     public int TotalCost { get; }
+    /// <summary>Value of all obtained cats before retaining targets; zero when scoring is disabled.</summary>
+    public int TotalSalvageValue { get; }
     public IReadOnlyList<GachaStep> Path { get; }
     public FrozenSet<string> Collected { get; }
     public Position? StartPos { get; }

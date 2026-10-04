@@ -9,7 +9,7 @@ namespace BattleCatCalc.Core.Interfaces;
 public interface ISimulator
 {
     /// <summary>
-    /// Finds the minimum-cost path to collect all target cats.
+    /// Finds the minimum-cost path to collect all target cats, maximizing guaranteed rolls at equal cost.
     /// </summary>
     /// <param name="start">Starting position on the track.</param>
     /// <param name="targets">Set of target cat names to collect.</param>

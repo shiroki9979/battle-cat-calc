@@ -15,10 +15,16 @@ namespace BattleCatCalc.Application.Simulation;
 /// Only cats that could trigger a duplicate (Rare cats per the catalog, see <c>GachaSimulator.ScanRules</c>) are kept;
 /// others are null, so the state space does not grow needlessly.
 /// </para>
+/// <para>
+/// <c>GuaranteedCount</c> resolves equal-cost goals and prevents dominance pruning from dropping a preferred prefix.
+/// <c>SalvageValue</c>, when configured, takes priority over guaranteed count at equal cost.
+/// </para>
 /// </summary>
 internal readonly record struct SearchState(
     float Priority,
     float Cost,
+    int SalvageValue,
+    int GuaranteedCount,
     int PosId,
     string PosTrack,
     FrozenSet<string> Collected,

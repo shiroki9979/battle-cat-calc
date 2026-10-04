@@ -55,7 +55,7 @@ public sealed class SimulateController(IFetcher fetcher, IParser parser) : Contr
 
         var result = simulator.FindBestPath(
             start, targets, request.MaxRolls,
-            request.BeamWidth, preferGuaranteed: false);
+            request.BeamWidth, preferGuaranteed: true);
 
         if (result is null)
             return NotFound(new

@@ -63,9 +63,10 @@ public class GachaSimulatorSearchDesignTests
         foreach (var track in new[] { "A", "B" })
         {
             var targets = Targets($"c{pos}{track}");
-            var expected = exact.FindBestPath(new Position(start, "B"), targets, 80)?.TotalCost;
-            var actual = astar.FindBestPath(new Position(start, "B"), targets, 80)?.TotalCost;
-            Assert.True(expected == actual, $"start={start}B target={pos}{track}: A*={actual} exact={expected}");
+            var expected = exact.FindBestPath(new Position(start, "B"), targets, 80);
+            var actual = astar.FindBestPath(new Position(start, "B"), targets, 80);
+            Assert.Equal(expected?.TotalCost, actual?.TotalCost);
+            Assert.Equal(expected?.GuaranteedCount, actual?.GuaranteedCount);
         }
     }
 
@@ -156,6 +157,77 @@ public class GachaSimulatorSearchDesignTests
     #region 排序穩定與回報成本
 
     [Fact]
+    public void DefaultSearch_PrefersGuaranteedAtEqualMinimumCost()
+    {
+        var pool = TrackBuilder.BuildPool(guaranteedCost: 1);
+
+        var result = new GachaSimulator([pool]).FindBestPath(new Position(1, "A"), Targets("Cat1"), 1);
+
+        Assert.NotNull(result);
+        Assert.Equal(1, result.TotalCost);
+        Assert.Equal(1, result.GuaranteedCount);
+    }
+
+    [Fact]
+    public void PreferGuaranteed_PreservesMoreGuaranteedRollsWhenPathsConverge()
+    {
+        // Both prefixes reach 21B at cost 2; the cheap pool takes two guaranteed rolls instead of one.
+        var expensive = TrackBuilder.BuildPool(poolId: "expensive", trackSize: 40, guaranteedCost: 2,
+            slotFactoryA: (id, track) => new GachaSlot(new Position(id, track),
+                new SlotValue.CatName($"Cat{id}"), new SlotValue.CatName($"Gua{id}"),
+                new Position(id == 1 ? 21 : id + 10, "B")),
+            slotFactoryB: (id, track) => new GachaSlot(new Position(id, track),
+                new SlotValue.CatName(id == 21 ? "Target" : $"Cat{id}"),
+                new SlotValue.CatName($"Gua{id}"), new Position(id + 11, "A")));
+        var cheap = TrackBuilder.BuildPool(poolId: "cheap", trackSize: 40, guaranteedCost: 1,
+            slotFactoryB: (id, track) => new GachaSlot(new Position(id, track),
+                new SlotValue.CatName(id == 21 ? "Target" : $"Cat{id}"),
+                new SlotValue.CatName($"Gua{id}"),
+                id == 11 ? new Position(21, "B") : new Position(id + 11, "A")));
+
+        var result = new GachaSimulator([expensive, cheap]).FindBestPath(new Position(1, "A"),
+            Targets("Target"), 3, beamWidth: null, preferGuaranteed: true);
+
+        Assert.NotNull(result);
+        Assert.Equal(3, result.TotalCost);
+        Assert.Equal(3, result.GuaranteedCount);
+        Assert.Equal(0, result.SingleRollCount);
+        Assert.All(result.Path, step => Assert.Equal("cheap", step.PoolId));
+    }
+
+    [Fact]
+    public void PreferGuaranteed_ChoosesMoreGuaranteedRollsAtEqualCost()
+    {
+        var pool = TrackBuilder.BuildPool(guaranteedCost: 1);
+
+        var result = new GachaSimulator([pool]).FindBestPath(new Position(1, "A"),
+            Targets("Cat1"), 1, beamWidth: null, preferGuaranteed: true);
+
+        Assert.NotNull(result);
+        Assert.Equal(1, result.TotalCost);
+        Assert.Equal(1, result.GuaranteedCount);
+        Assert.Equal(0, result.SingleRollCount);
+    }
+
+    [Fact]
+    public void PreferGuaranteed_DoesNotIncreaseMinimumCost()
+    {
+        var pool = TrackBuilder.BuildPool(guaranteedCost: 11, slotFactoryA: (id, track) =>
+            new GachaSlot(new Position(id, track),
+                new SlotValue.CatName(id == 10 ? "Target" : $"Cat{id}"),
+                new SlotValue.CatName(id == 1 ? "Target" : $"Gua{id}"),
+                new Position(id + 10, "B")));
+
+        var result = new GachaSimulator([pool]).FindBestPath(new Position(1, "A"),
+            Targets("Target"), 20, beamWidth: null, preferGuaranteed: true);
+
+        Assert.NotNull(result);
+        Assert.Equal(10, result.TotalCost);
+        Assert.Equal(0, result.GuaranteedCount);
+        Assert.Equal(10, result.SingleRollCount);
+    }
+
+    [Fact]
     public void SameQuery_YieldsIdenticalPath()
     {
         /// 動機：f 相同時以 (-g, StateId) 決定順序，結果必須可重現。
@@ -175,7 +247,7 @@ public class GachaSimulatorSearchDesignTests
     [Fact]
     public void TotalCost_IsActualRollCount_EvenWithPreferGuaranteed()
     {
-        /// 動機：preferGuaranteed 的 1.11 加權只用於排序；回報的 TotalCost 是實際抽數（1 單抽 + 1 必中 = 11）。
+        // Guaranteed preference preserves actual cost: one single plus one guaranteed costs 11.
         var (a, b) = LandingTracks();
         var slots = a.ToList();
         slots[1] = slots[1] with { Guaranteed = new SlotValue.CatName("Target") };

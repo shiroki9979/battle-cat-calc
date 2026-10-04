@@ -5,6 +5,7 @@ using BattleCatCalc.Core.Models;
 
 // 佇列排序鍵：f 相同時先展開 g 大的（離目標較近），再以 StateId 保證順序穩定、結果可重現。
 using SearchPriority = (float F, float NegCost, int Seq);
+using VisitedEntry = (float Cost, int SalvageValue, int GuaranteedCount, System.Collections.Frozen.FrozenSet<string> Collected);
 
 namespace BattleCatCalc.Application.Simulation;
 
@@ -26,6 +27,7 @@ public sealed class GachaSimulator : ISimulator
 
     // 以下欄位在 FindBestPath 呼叫時初始化，僅供搜尋期間使用
     private Dictionary<string, int[]> _targetSortedPositions = [];
+    private IReadOnlyDictionary<string, int>? _salvageValues;
 
     /// <summary>每格的最低成本（啟發式係數，供測試驗證下界）。</summary>
     internal float MinCostPerAdvance => _minCostPerAdvance;
@@ -56,7 +58,7 @@ public sealed class GachaSimulator : ISimulator
 
     /// <inheritdoc />
     public GachaResult? FindBestPath(Position start, FrozenSet<string> targets, int maxRolls = 1000)
-        => FindBestPath(start, targets, maxRolls, beamWidth: null, preferGuaranteed: false);
+        => FindBestPath(start, targets, maxRolls, beamWidth: null, preferGuaranteed: true);
 
     /// <summary>
     /// Extended search with beam width and guaranteed preference options.
@@ -65,16 +67,19 @@ public sealed class GachaSimulator : ISimulator
     /// <param name="targets">Set of target cat names to collect.</param>
     /// <param name="maxRolls">Maximum number of rolls to search.</param>
     /// <param name="beamWidth">Beam search width limit. Null for full A*. Recommended: 10000-50000.</param>
-    /// <param name="preferGuaranteed">When true, single rolls get a 1.11x cost penalty to prefer guaranteed rolls.</param>
+    /// <param name="preferGuaranteed">When true, maximize guaranteed rolls after minimum cost and any configured salvage value. Beam search remains approximate.</param>
     /// <param name="progressCallback">Called per state: (cost, statesProcessed, queueSize).</param>
+    /// <param name="salvageValues">Optional value per cat. Maximize total value at minimum cost, before guaranteed count. Includes retained target cats.</param>
     public GachaResult? FindBestPath(
         Position start,
         FrozenSet<string> targets,
         int maxRolls,
         int? beamWidth,
         bool preferGuaranteed,
-        Action<float, int, int>? progressCallback = null)
+        Action<float, int, int>? progressCallback = null,
+        IReadOnlyDictionary<string, int>? salvageValues = null)
     {
+        _salvageValues = salvageValues;
         int targetCount = targets.Count;
 
         // 空目標特殊處理
@@ -100,6 +105,8 @@ public sealed class GachaSimulator : ISimulator
         var startState = new SearchState(
             Priority: h,
             Cost: 0,
+            SalvageValue: 0,
+            GuaranteedCount: 0,
             PosId: start.Id,
             PosTrack: start.Track,
             Collected: initialCollected,
@@ -111,37 +118,46 @@ public sealed class GachaSimulator : ISimulator
         var pq = new PriorityQueue<SearchState, SearchPriority>();
         pq.Enqueue(startState, PriorityOf(startState));
 
-        // 支配性剪枝: (posId, posTrack, lastRolledRare) -> [(cost, collected)]
-        var visited = new Dictionary<(int, string, string?), List<(float Cost, FrozenSet<string> Collected)>>();
+        // Equal-cost prefixes retain both rewards so convergence preserves the preferred route.
+        var visited = new Dictionary<(int, string, string?), List<VisitedEntry>>();
         var stateMap = new Dictionary<int, SearchState> { [startId] = startState };
         int statesProcessed = 0;
+        SearchState? bestGoal = null;
 
         while (pq.Count > 0)
         {
             var state = pq.Dequeue();
+            if (bestGoal is { } goal && state.Priority > goal.Cost)
+                break;
             statesProcessed++;
 
             progressCallback?.Invoke(state.Cost, statesProcessed, pq.Count);
 
-            // 目標檢查：所有目標都已收集即為最佳解
+            // A first goal establishes minimum cost; equal-cost alternatives can still improve rewards.
             if (targets.IsSubsetOf(state.Collected))
             {
-                var path = ReconstructPath(state, stateMap);
-                int totalCost = ComputeActualCost(path);
-                return new GachaResult(totalCost, path, state.Collected, start, targets);
+                if (bestGoal is not { } previousGoal || state.Cost < previousGoal.Cost
+                    || (state.Cost == previousGoal.Cost && (state.SalvageValue > previousGoal.SalvageValue
+                        || (state.SalvageValue == previousGoal.SalvageValue && preferGuaranteed
+                            && state.GuaranteedCount > previousGoal.GuaranteedCount))))
+                    bestGoal = state;
+                if (!preferGuaranteed && salvageValues is null) break;
+                continue;
             }
 
-            if (state.Cost >= maxRolls)
+            int costLimit = bestGoal is { } minimumGoal ? (int)minimumGoal.Cost : maxRolls;
+            if (state.Cost >= costLimit)
                 continue;
 
             // 支配性剪枝
             var posKey = (state.PosId, state.PosTrack, state.LastRolledRare);
+            VisitedEntry currentEntry = (state.Cost, state.SalvageValue, state.GuaranteedCount, state.Collected);
             if (visited.TryGetValue(posKey, out var entries))
             {
                 bool dominated = false;
-                foreach (var (vCost, vCollected) in entries)
+                foreach (var entry in entries)
                 {
-                    if (vCost <= state.Cost && vCollected.IsSupersetOf(state.Collected))
+                    if (Dominates(entry, currentEntry, preferGuaranteed))
                     {
                         dominated = true;
                         break;
@@ -150,12 +166,12 @@ public sealed class GachaSimulator : ISimulator
                 if (dominated) continue;
 
                 // 移除被當前狀態支配的舊項目
-                entries.RemoveAll(e => state.Cost <= e.Cost && state.Collected.IsSupersetOf(e.Collected));
-                entries.Add((state.Cost, state.Collected));
+                entries.RemoveAll(entry => Dominates(currentEntry, entry, preferGuaranteed));
+                entries.Add(currentEntry);
             }
             else
             {
-                visited[posKey] = [(state.Cost, state.Collected)];
+                visited[posKey] = [currentEntry];
             }
 
             // 可達性剪枝：位置只會單調遞增，若剩餘目標的最大位置 < 當前位置則不可達
@@ -172,11 +188,10 @@ public sealed class GachaSimulator : ISimulator
             if (unreachable) continue;
 
             // 展開分支：對每個池嘗試單抽與保底
-            float singleRollCost = preferGuaranteed ? 1.11f : 1;
             foreach (var poolId in _pools.Keys)
             {
-                ProcessSingleRoll(state, targets, maxRolls, pq, stateMap, poolId, singleRollCost, ref idCounter, targetCount);
-                ProcessGuaranteedRoll(state, targets, maxRolls, pq, stateMap, poolId, ref idCounter, targetCount);
+                ProcessSingleRoll(state, targets, costLimit, pq, stateMap, poolId, ref idCounter, targetCount);
+                ProcessGuaranteedRoll(state, targets, costLimit, pq, stateMap, poolId, ref idCounter, targetCount);
             }
 
             // Beam Search：限制佇列大小以控制記憶體使用
@@ -191,20 +206,34 @@ public sealed class GachaSimulator : ISimulator
                 foreach (var item in best)
                     pq.Enqueue(item.Element, item.Priority);
 
-                // 清理 stateMap：只保留 PQ 中所有狀態的祖先鏈
-                var neededIds = CollectAncestorIds(best.Select(x => x.Element), stateMap);
+                // The completed goal is no longer queued, but its parents are still needed for the final result.
+                var activeStates = best.Select(x => x.Element);
+                if (bestGoal is { } candidate) activeStates = activeStates.Append(candidate);
+                var neededIds = CollectAncestorIds(activeStates, stateMap);
                 var keysToRemove = stateMap.Keys.Where(k => !neededIds.Contains(k)).ToList();
                 foreach (var key in keysToRemove)
                     stateMap.Remove(key);
             }
         }
 
-        return null;
+        if (bestGoal is not { } found) return null;
+        var path = ReconstructPath(found, stateMap);
+        return new GachaResult(ComputeActualCost(path), path, found.Collected, start, targets, found.SalvageValue);
     }
 
     #region Private Helpers
 
     private static SearchPriority PriorityOf(SearchState state) => (state.Priority, -state.Cost, state.StateId);
+
+    private static bool Dominates(VisitedEntry candidate, VisitedEntry other, bool preferGuaranteed)
+    {
+        if (candidate.Cost > other.Cost || (candidate.Cost == other.Cost
+            && (candidate.SalvageValue < other.SalvageValue
+                || (candidate.SalvageValue == other.SalvageValue && preferGuaranteed
+                    && candidate.GuaranteedCount < other.GuaranteedCount))))
+            return false;
+        return candidate.Collected.IsSupersetOf(other.Collected);
+    }
 
     private GachaSlot? GetSlot(int posId, string posTrack, string poolId)
     {
@@ -265,6 +294,8 @@ public sealed class GachaSimulator : ISimulator
 
     /// <summary>決定要不要把剛拿到的貓記進狀態（見 SearchState.LastRolledRare）。</summary>
     private string? Remember(string unit) => _rememberedCats.Contains(unit) ? unit : null;
+
+    private int SalvageValue(string unit) => _salvageValues is null ? 0 : _salvageValues[unit];
 
     /// <summary>
     /// 計算在 slot 單抽一次會拿到什麼、落在哪。
@@ -394,14 +425,13 @@ public sealed class GachaSimulator : ISimulator
         PriorityQueue<SearchState, SearchPriority> pq,
         Dictionary<int, SearchState> stateMap,
         string poolId,
-        float singleRollCost,
         ref int idCounter,
         int targetCount)
     {
         var slot = GetSlot(state.PosId, state.PosTrack, poolId);
         if (slot is null) return;
 
-        float newCost = state.Cost + singleRollCost;
+        float newCost = state.Cost + 1;
         if (newCost > maxRolls) return;
 
         if (ResolveSingleRoll(slot, state.LastRolledRare) is not { } outcome) return;
@@ -429,6 +459,8 @@ public sealed class GachaSimulator : ISimulator
         var newState = new SearchState(
             Priority: newCost + h,
             Cost: newCost,
+            SalvageValue: state.SalvageValue + SalvageValue(actualUnit),
+            GuaranteedCount: state.GuaranteedCount,
             PosId: nextPos.Id,
             PosTrack: nextPos.Track,
             Collected: newCollected,
@@ -461,6 +493,7 @@ public sealed class GachaSimulator : ISimulator
         if (slot is null) return;
 
         var collectedInRoll = new HashSet<string>();
+        int salvageValue = state.SalvageValue;
         string? lastCat = state.LastRolledRare;
         var pos = new Position(state.PosId, state.PosTrack);
         bool startTriggeredDup = false;
@@ -474,6 +507,7 @@ public sealed class GachaSimulator : ISimulator
 
             if (i == 0) startTriggeredDup = outcome.IsDuplicateRare;
             if (targets.Contains(outcome.Unit)) collectedInRoll.Add(outcome.Unit);
+            salvageValue += SalvageValue(outcome.Unit);
             lastCat = outcome.Unit;
             pos = outcome.NextPos;
         }
@@ -498,6 +532,7 @@ public sealed class GachaSimulator : ISimulator
         // 第 11 隻是必中超激，它成為「上一隻」，因此重複判定在這之後重置。
         // 此為依規則推得的假設，尚無資料可獨立驗證。
         if (targets.Contains(guaUnit)) collectedInRoll.Add(guaUnit);
+        salvageValue += SalvageValue(guaUnit);
 
         FrozenSet<string> newCollected;
         if (collectedInRoll.Count > 0)
@@ -527,6 +562,8 @@ public sealed class GachaSimulator : ISimulator
         var newState = new SearchState(
             Priority: newCost + h,
             Cost: newCost,
+            SalvageValue: salvageValue,
+            GuaranteedCount: state.GuaranteedCount + 1,
             PosId: nextPos.Id,
             PosTrack: nextPos.Track,
             Collected: newCollected,

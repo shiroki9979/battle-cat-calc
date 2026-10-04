@@ -66,9 +66,9 @@ public class GachaSimulatorEdgeCaseTests
     #region preferGuaranteed 模式
 
     [Fact]
-    public void FindBestPath_PreferGuaranteed_IncreaseSingleRollCost()
+    public void FindBestPath_PreferGuaranteed_CollectsGuaranteedOnlyTarget()
     {
-        /// 動機：preferGuaranteed=true 會使單抽成本 ×1.11，更傾向使用保底路徑。
+        // A guaranteed-only target remains reachable when equal-cost guaranteed preference is enabled.
         var pool = TrackBuilder.BuildPool(trackSize: 20);
         var sim = new GachaSimulator([pool]);
         var start = new Position(1, "A");
